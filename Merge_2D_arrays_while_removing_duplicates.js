@@ -1,87 +1,223 @@
-/**
- * オブジェクトの各エントリを順々に関数に引き渡して加工する関数
- *
- * @param {Object} dataObj - 加工対象のオブジェクト（キー: 一意の識別子, 値: 加工対象のデータ）
- * @param {Function} processFunction - 各データに適用する処理関数 (引数: key, value)
- * @return {Object} 加工後のデータを格納したオブジェクト
- */
-function processObjectEntries(dataObj, processFunction) {
-    return Object.entries(dataObj).reduce((acc, [key, value]) => {
-        acc[key] = processFunction(key, value);
-        return acc;
-    }, {});
+function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateIdHeaders, rdbData, columnManager) {
+  // memberIdをキーとする時間枠データのマップを作成（ガントチャートのデータ）
+  const shiftsFromGanttMap = gantt2dAryToMap(ganttValue, ganttBg, timeHeaders, memberDateIdHeaders);
+
+  // RDBからのデータもmemberIdをキー、時間枠をマップとして変換
+  const shiftsFromRdbMap = rdb2dAryToMap(rdbData, columnManager, timeHeaders);
+
+  // 重複検出と解決
+  const { validShiftsMap, conflictShiftObjs } = detectConflictsWithMap(
+    shiftsFromGanttMap,
+    shiftsFromRdbMap,
+    timeHeaders
+  );
+
+  // 中間配列変換を削除し、直接MapオブジェクトとconflictShiftObjsを返す
+  return { validShiftsMap, conflictShiftObjs };
 }
 
+// ガントチャートデータをmemberIdをキーとするマップに変換
+function gantt2dAryToMap(ganttValue, ganttBg, timeHeaders, memberDateIdHeaders) {
+  // memberIdをキーとし、時間ごとのシフト情報を格納するマップ
+  const shiftsMap = new Map();
 
-// ② unmergeGantで分割後、各行ごとに横方向で同じ値・背景色が続くセルをグループとしてまとめる関数
-function extractGanttShifts(ganttData, ganttBg,timeHeaders) {
-  let shifts = [];
   // 各行を走査
-  for (let i = 0; i < ganttData.length; i++) {
-    let row = ganttData[i];
-    let bgRow = ganttBg[i];
-    let j = 1;//memberDateIdの見出し列をスキップするので1スタート
+  for (let i = 0; i < ganttValue.length; i++) {
+    const row = ganttValue[i];
+    const bgRow = ganttBg[i];
+    const memberId = memberDateIdHeaders[i];
+
+    if (!memberId) continue; // memberIdが無効な場合はスキップ
+
+    // このメンバーのマップがなければ初期化
+    if (!shiftsMap.has(memberId)) {
+      shiftsMap.set(memberId, new Map());
+    }
+
+    // このメンバーの時間枠ごとのマップ
+    const memberTimeMap = shiftsMap.get(memberId);
+
+    let j = 0;
     while (j < row.length) {
-      // ガントチャートの棒セルの判定:
-      // 「値が入力されている」または「背景色が白(#ffffff)以外」であれば対象とする
+      // ガントチャートの棒セルを検出
       if (row[j] !== "" || (bgRow[j] && bgRow[j] !== "#FFFFFF")) {
-        let startCol = j;
-        let cellValue = row[j];
-        let cellBg = bgRow[j];
-        // 横方向に同じ値＆背景色が続く間、グループに追加
-        while (j < row.length && row[j] === cellValue && (bgRow[j] && bgRow[j] === cellBg)) {
+        const startCol = j;
+        const cellValue = row[j];
+        const cellBg = bgRow[j];
+
+        // 横方向に同じ値＆背景色が続く間、同じシフトとして扱う
+        while (j < row.length && row[j] === cellValue && bgRow[j] && bgRow[j] === cellBg) {
           j++;
         }
-        let endCol = j - 1;
-        shifts.push({
-          memberDateId: row[GC_COL_ORDER.indexOf("memberDateId")],//一番左にメンバー番号が記載されている
-          startTime: new Date(timeHeaders[startCol - 1]),  //memberDateIdの1列分、timeheadersがずれている
-          startTime: new Date(timeHeaders[endCol]),  //一つ後の時間が終了時刻なので±0
+
+        const endCol = j - 1;
+        const startTime = new Date(timeHeaders[startCol]);
+        const endTime = new Date(timeHeaders[endCol + 1]);
+
+        // シフト全体の情報を作成
+        const shiftInfo = {
           job: cellValue,
           background: cellBg,
-          sorce: "Gantt"
-        });
+          source: "Gantt",
+          memberDateId: memberId,
+          startTime,
+          endTime,
+          // 元のシフト識別用のID
+          shiftId: `gantt_${memberId}_${startTime.getTime()}_${endTime.getTime()}_${cellValue}`,
+        };
+
+        // 時間範囲内の各時間スロットに値を設定（同じシフトIDを持たせる）
+        for (let k = startCol; k <= endCol; k++) {
+          const timeKey = timeHeaders[k];
+          memberTimeMap.set(timeKey, shiftInfo);
+        }
       } else {
         j++;
       }
     }
   }
 
-  return shifts;
+  return shiftsMap;
 }
 
-/** シフトデータを抽出 */
-function extractDbShifts(dbData) {
-  let shifts = [];
-
-  dbData.slice(1).forEach(row => {
-    shifts.push({ source: "DB", job: row[0], memberDateId: row[1], startTime: new Date(row[2]), endTime: new Date(row[3]), background: row[4] });
-  });
-
-  return shifts;
-}
-
-/** ダブルブッキング検出 */
-function detectDoubleBookings(shifts) {
-  let validShifts = [], doubleBookings = [];
-  let groupedShifts = shifts.reduce((acc, shift) => {
-    acc[shift.memberDateId] = acc[shift.memberDateId] || [];
-    acc[shift.memberDateId].push(shift);
-    return acc;
-  }, {});
-
-  for (let memberDateId in groupedShifts) {
-    let sortedShifts = groupedShifts[memberDateId].sort((a, b) => a.startTime - b.startTime);
-    let overlaps = [];
-    sortedShifts.forEach((shift, i, arr) => {
-      if (i > 0 && arr[i - 1].endTime > shift.startTime) {
-        if (!overlaps.includes(arr[i - 1])) overlaps.push(arr[i - 1]);
-        if (!overlaps.includes(shift)) overlaps.push(shift);
+// RDBデータをmemberIdをキーとするマップに変換
+function rdb2dAryToMap(rdbData, columnManager, timeHeaders) {
+  const shiftsMap = new Map();
+  
+  // 列インデックスを一度だけ取得
+  const memberDateIdIndex = columnManager.getColumnIndex("memberDateId");
+  const jobIndex = columnManager.getColumnIndex("job");
+  const startTimeIndex = columnManager.getColumnIndex("startTime");
+  const endTimeIndex = columnManager.getColumnIndex("endTime");
+  const backgroundIndex = columnManager.getColumnIndex("background");
+  
+  // ヘッダー行をスキップ
+  for (let i = 1; i < rdbData.length; i++) {
+    const row = rdbData[i];
+    const memberId = row[memberDateIdIndex];
+    const job = row[jobIndex];
+    const startTime = new Date(row[startTimeIndex]);
+    const endTime = new Date(row[endTimeIndex]);
+    const background = row[backgroundIndex];
+    
+    if (!memberId) continue;
+    
+    // このメンバーのマップがなければ初期化
+    if (!shiftsMap.has(memberId)) {
+      shiftsMap.set(memberId, new Map());
+    }
+    
+    const memberTimeMap = shiftsMap.get(memberId);
+    
+    // シフト全体の情報を作成
+    const shiftInfo = {
+      job,
+      background,
+      source: "RDB",
+      memberDateId: memberId,
+      startTime,
+      endTime,
+      // 元のシフト識別用のID
+      shiftId: `rdb_${memberId}_${startTime.getTime()}_${endTime.getTime()}_${job}`
+    };
+    
+    // 該当する時間範囲内の各時間スロットに値を設定（同じシフトIDを持たせる）
+    for (let j = 0; j < timeHeaders.length; j++) {
+      const timeSlot = new Date(timeHeaders[j]);
+      if (timeSlot >= startTime && timeSlot < endTime) {
+        memberTimeMap.set(timeHeaders[j], shiftInfo);
       }
-    });
-    overlaps = [...new Set(overlaps)];//setオブジェクトにすることで重複削除。バカ便利。
-    validShifts.push(...sortedShifts.filter(shift => !overlaps.includes(shift)));
-    doubleBookings.push(...overlaps);
+    }
   }
-  return { validShifts, doubleBookings };
+  
+  return shiftsMap;
+}
+
+// マップを使用した重複検出と解決
+function detectConflictsWithMap(ganttMap, rdbMap, timeHeaders) {
+  const validShiftsMap = new Map();
+  const conflictShiftIds = new Set(); // 重複したシフトのIDを保存
+  const allMemberIds = new Set([...ganttMap.keys(), ...rdbMap.keys()]);
+
+  // 各メンバーについて処理
+  for (const memberId of allMemberIds) {
+    const ganttTimeMap = ganttMap.get(memberId) || new Map();
+    const rdbTimeMap = rdbMap.get(memberId) || new Map();
+
+    // このメンバーの有効なシフト情報を保持するマップ
+    if (!validShiftsMap.has(memberId)) {
+      validShiftsMap.set(memberId, new Map());
+    }
+    const memberValidMap = validShiftsMap.get(memberId);
+
+    // 同一メンバー内の重複シフトを追跡するセット
+    const conflictingShiftIds = new Set();
+
+    // 各時間スロットの処理
+    for (let i = 0; i < timeHeaders.length; i++) {
+      const timeKey = timeHeaders[i];
+      const ganttShift = ganttTimeMap.get(timeKey);
+      const rdbShift = rdbTimeMap.get(timeKey);
+
+      // 重複の検出
+      if (ganttShift && rdbShift) {
+        // 両方のソースに存在する場合
+        if (ganttShift.job !== rdbShift.job || ganttShift.background !== rdbShift.background) {
+          // 情報が異なる場合は両方のシフト全体をコンフリクトとしてマーク
+          conflictingShiftIds.add(ganttShift.shiftId);
+          conflictingShiftIds.add(rdbShift.shiftId);
+        } else {
+          // 情報が一致する場合はガントの情報を有効シフトに追加
+          // ただし既にコンフリクトしているシフトの一部ならスキップ
+          if (!conflictingShiftIds.has(ganttShift.shiftId)) {
+            memberValidMap.set(timeKey, ganttShift);
+          }
+        }
+      } else if (ganttShift) {
+        // ガントチャートのみに存在（かつコンフリクトしていなければ）
+        if (!conflictingShiftIds.has(ganttShift.shiftId)) {
+          memberValidMap.set(timeKey, ganttShift);
+        }
+      } else if (rdbShift) {
+        // RDBのみに存在（かつコンフリクトしていなければ）
+        if (!conflictingShiftIds.has(rdbShift.shiftId)) {
+          memberValidMap.set(timeKey, rdbShift);
+        }
+      }
+    }
+
+    // コンフリクトシフトIDを全体のセットに追加
+    for (const id of conflictingShiftIds) {
+      conflictShiftIds.add(id);
+    }
+  }
+
+  // 重複シフトの実際のオブジェクトを収集
+  const conflictShiftObjs = [];
+
+  // ガントマップから重複シフトを収集
+  for (const [memberId, timeMap] of ganttMap.entries()) {
+    const processedShiftIds = new Set();
+
+    for (const shiftInfo of timeMap.values()) {
+      if (conflictShiftIds.has(shiftInfo.shiftId) && !processedShiftIds.has(shiftInfo.shiftId)) {
+        conflictShiftObjs.push(shiftInfo);
+        processedShiftIds.add(shiftInfo.shiftId);
+      }
+    }
+  }
+
+  // RDBマップから重複シフトを収集
+  for (const [memberId, timeMap] of rdbMap.entries()) {
+    const processedShiftIds = new Set();
+
+    for (const shiftInfo of timeMap.values()) {
+      if (conflictShiftIds.has(shiftInfo.shiftId) && !processedShiftIds.has(shiftInfo.shiftId)) {
+        conflictShiftObjs.push(shiftInfo);
+        processedShiftIds.add(shiftInfo.shiftId);
+      }
+    }
+  }
+
+  return { validShiftsMap, conflictShiftObjs };
 }
