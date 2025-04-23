@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      .form-container {
+        font-family: Arial, sans-serif;
+        padding: 10px;
+      }
+      .form-group {
+        margin-bottom: 15px;
+      }
+      .form-label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: bold;
+      }
+      .form-control {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        box-sizing: border-box;
+      }
+      .required {
+        color: red;
+        margin-left: 3px;
+      }
+      .button-container {
+        text-align: center;
+        margin-top: 20px;
+      }
+      .btn {
+        padding: 8px 15px;
+        margin: 0 5px;
+        cursor: pointer;
+        border-radius: 4px;
+        border: none;
+      }
+      .btn-primary {
+        background-color: #4285f4;
+        color: white;
+      }
+      .btn-secondary {
+        background-color: #f1f1f1;
+        color: #333;
+      }
+      .error-message {
+        color: red;
+        font-size: 12px;
+        margin-top: 5px;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="form-container">
+      <form id="dataForm">
+        <div id="formFields">
+          <!-- フィールドはJavaScriptで動的に生成されます -->
+        </div>
+        <div class="button-container">
+          <button type="button" class="btn btn-secondary" onclick="closeDialog()">キャンセル</button>
+          <button type="button" class="btn btn-primary" onclick="submitForm()">OK</button>
+        </div>
+      </form>
+    </div>
+
+    <script>
+      // ダイアログキーを変数に格納
+      const dialogKey = '<?!= dialogKey ?>';
+      
+      // ページ読み込み時にフォームフィールドを生成
+      window.onload = function() {
+        // サーバーから渡されたフィールド設定を取得
+        const fieldConfigs = JSON.parse('<?!= JSON.stringify(fieldConfigs) ?>');
+        generateFormFields(fieldConfigs);
+      };
+
+      // フォームフィールドを動的に生成する関数
+      function generateFormFields(fieldConfigs) {
+        const formFieldsContainer = document.getElementById('formFields');
+        
+        fieldConfigs.forEach(field => {
+          const fieldGroup = document.createElement('div');
+          fieldGroup.className = 'form-group';
+          
+          // ラベルを作成
+          const label = document.createElement('label');
+          label.className = 'form-label';
+          label.setAttribute('for', field.id);
+          label.textContent = field.label;
+          
+          // 必須マークを追加
+          if (field.required) {
+            const requiredMark = document.createElement('span');
+            requiredMark.className = 'required';
+            requiredMark.textContent = '*';
+            label.appendChild(requiredMark);
+          }
+          
+          // 入力フィールドを作成
+          const input = document.createElement('input');
+          input.className = 'form-control';
+          input.id = field.id;
+          input.name = field.id;
+          
+          // タイプに応じて適切なinput typeを設定
+          switch(field.type) {
+            case 'number':
+              input.type = 'number';
+              if (field.min !== undefined) input.min = field.min;
+              if (field.max !== undefined) input.max = field.max;
+              if (field.step !== undefined) input.step = field.step;
+              break;
+            case 'email':
+              input.type = 'email';
+              break;
+            case 'url':
+              input.type = 'url';
+              break;
+            case 'datetime':
+              input.type = 'datetime-local';
+              break;
+            case 'date':
+              input.type = 'date';
+              break;
+            case 'time':
+              input.type = 'time';
+              break;
+            case 'tel':
+              input.type = 'tel';
+              break;
+            default:
+              input.type = 'text';
+          }
+          
+          if (field.value) input.value = field.value;
+          if (field.required) input.required = true;
+          if (field.pattern) input.pattern = field.pattern;
+          
+          // エラーメッセージ要素
+          const errorMsg = document.createElement('div');
+          errorMsg.className = 'error-message';
+          errorMsg.id = `${field.id}-error`;
+          
+          // 入力検証用のイベントリスナーを追加
+          input.addEventListener('input', function() {
+            validateInput(input, field.type, errorMsg);
+          });
+          
+          input.addEventListener('blur', function() {
+            validateInput(input, field.type, errorMsg);
+          });
+          
+          // 要素をフォームに追加
+          fieldGroup.appendChild(label);
+          fieldGroup.appendChild(input);
+          fieldGroup.appendChild(errorMsg);
+          formFieldsContainer.appendChild(fieldGroup);
+        });
+      }
+      
+      // 入力値の検証を行う関数
+      function validateInput(input, type, errorElement) {
+        let isValid = true;
+        let errorMessage = '';
+        
+        // 必須項目の検証
+        if (input.required && !input.value.trim()) {
+          isValid = false;
+          errorMessage = '入力必須項目です';
+        } else if (input.value.trim()) {
+          // 入力値がある場合はタイプ別の検証
+          switch(type) {
+            case 'number':
+              if (isNaN(Number(input.value))) {
+                isValid = false;
+                errorMessage = '数値を入力してください';
+              } else if (input.min && Number(input.value) < Number(input.min)) {
+                isValid = false;
+                errorMessage = `${input.min}以上の値を入力してください`;
+              } else if (input.max && Number(input.value) > Number(input.max)) {
+                isValid = false;
+                errorMessage = `${input.max}以下の値を入力してください`;
+              }
+              break;
+              
+            case 'email':
+              // メールアドレスの正規表現パターン
+              const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+              if (!emailPattern.test(input.value)) {
+                isValid = false;
+                errorMessage = '有効なメールアドレスを入力してください';
+              }
+              break;
+              
+            case 'url':
+              // URLの正規表現パターン
+              const urlPattern = /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/;
+              if (!urlPattern.test(input.value)) {
+                isValid = false;
+                errorMessage = '有効なURLを入力してください';
+              }
+              break;
+              
+            case 'tel':
+              // 電話番号の正規表現パターン（国際対応）
+              const telPattern = /^[+]?[(]?[0-9]{1,4}[)]?[-\s.]?[0-9]{1,4}[-\s.]?[0-9]{1,9}$/;
+              if (!telPattern.test(input.value)) {
+                isValid = false;
+                errorMessage = '有効な電話番号を入力してください';
+              }
+              break;
+              
+            case 'datetime':
+            case 'date':
+            case 'time':
+              // HTML5の標準バリデーションに任せる
+              if (input.validity && !input.validity.valid) {
+                isValid = false;
+                errorMessage = '有効な日時を入力してください';
+              }
+              break;
+              
+            case 'string':
+            default:
+              // パターンが設定されている場合はパターンチェック
+              if (input.pattern && !new RegExp(input.pattern).test(input.value)) {
+                isValid = false;
+                errorMessage = '入力形式が正しくありません';
+              }
+              break;
+          }
+        }
+        
+        // 検証結果を表示
+        if (isValid) {
+          input.style.borderColor = '#ccc';
+          errorElement.style.display = 'none';
+        } else {
+          input.style.borderColor = 'red';
+          errorElement.textContent = errorMessage;
+          errorElement.style.display = 'block';
+        }
+        
+        return isValid;
+      }
+
+      // フォーム送信処理
+      function submitForm() {
+        const form = document.getElementById('dataForm');
+        const formData = {};
+        
+        // フォームの各入力フィールドから値を取得
+        const inputs = form.querySelectorAll('input');
+        let isValid = true;
+        
+        inputs.forEach(input => {
+          // エラーメッセージ要素を取得
+          const errorElement = document.getElementById(`${input.id}-error`);
+          
+          // タイプに基づいたバリデーション
+          if (!validateInput(input, input.type, errorElement)) {
+            isValid = false;
+          } else {
+            // 有効な値の場合はフォームデータに追加
+            // 数値タイプの場合は変換
+            if (input.type === 'number') {
+              formData[input.id] = Number(input.value);
+            } else {
+              formData[input.id] = input.value;
+            }
+          }
+        });
+        
+        if (!isValid) {
+          alert('入力内容に誤りがあります。修正してください。');
+          return;
+        }
+        
+        // ボタンを無効化
+        document.querySelectorAll('button').forEach(btn => {
+          btn.disabled = true;
+        });
+        
+        // サーバーサイド関数を呼び出し、結果をコールバックで受け取る
+        google.script.run
+          .withSuccessHandler(onSuccess)
+          .withFailureHandler(onFailure)
+          .processFormData(formData, dialogKey);
+      }
+      
+      // 成功時のコールバック
+      function onSuccess(result) {
+        if (result.success) {
+          google.script.host.close();
+        } else {
+          alert('エラーが発生しました: ' + (result.error || '不明なエラー'));
+          // ボタンを再度有効化
+          document.querySelectorAll('button').forEach(btn => {
+            btn.disabled = false;
+          });
+        }
+      }
+      
+      // 失敗時のコールバック
+      function onFailure(error) {
+        alert('エラーが発生しました: ' + error.message);
+        // ボタンを再度有効化
+        document.querySelectorAll('button').forEach(btn => {
+          btn.disabled = false;
+        });
+      }
+      
+      // ダイアログを閉じる
+      function closeDialog() {
+        google.script.host.close();
+      }
+    </script>
+  </body>
+</html> 
