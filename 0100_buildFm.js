@@ -6,37 +6,74 @@ function onOpen() {
     .addToUi();
 }
 
-function setTimescale() {
-  const startCell = promptRangeSelection(
-    "タイムスケールを挿入開始するセルを選択してください。選択したらOKボタンを押してください。"
-  );
-  //   開始時刻、終了時刻、時間間隔の入力を求めるカスタムプロンプトを後ほど作成
-  //   const startTime = range.getValues()[0][0];
-  //   const endTime = range.getValues()[0][1];
-  //   const interval = range.getValues()[0][2];
-  const timescale = buildTimescaleArray(startTime, endTime, interval);
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  const range = sheet.getRange(startCell.getRow(), startCell.getColumn(), 1, timescale.length);
-  range.setValues([timescale]);
+async function setTimescale() {
+  const startCell = promptRangeSelection("タイムスケールを挿入開始するセルを選択。選択したらOKボタンを押下。選びなおす場合はキャンセルボタンを押下し、再実行。");
+  if (!startCell) return; // キャンセル時の処理
+  
+  // フィールド設定
+  const fieldConfigs = [
+    {
+      id: "startTime",
+      label: "開始時刻",
+      type: "time",
+      required: true,
+    },
+    {
+      id: "endTime",
+      label: "終了時刻",
+      type: "time",
+      required: true,
+    },
+    {
+      id: "interval",
+      label: "時間間隔",
+      type: "number",
+      required: true,
+    },
+  ];
+  
+  try {
+    const result = await showCustomInputDialog(fieldConfigs, "シフトの開始時刻、終了時刻、時間間隔を入力");
+    const startTime = result.startTime;
+    const endTime = result.endTime;
+    const interval = result.interval;
+    const timescale = buildTimescaleArray(startTime, endTime, interval);
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const range = sheet.getRange(startCell.getRow(), startCell.getColumn(), 1, timescale.length);
+    range.setValues([timescale]);
+  } catch (error) {
+    console.error(error);
+  }
 }
 
-function duplicateRows() {
-  const orgRange = promptRangeSelection("複製する行セットを選択してください。選択したらOKボタンを押してください。");
-  //  複製する行数もカスタムプロンプトで入力させる
-  //   const times = promptDuplicateRows();
-  if (times) {
+async function duplicateRows() {
+  const orgRange = promptRangeSelection("複製する行セットを選択...");
+  if (!orgRange) return;
+
+  const fieldConfigs = [{
+    id: "times",
+    label: "複製する行数",
+    type: "number",
+    required: true,
+  }];
+
+  try {
+    const result = await showCustomInputDialog(fieldConfigs, "行セットを何回複製するか入力");
+    const times = result.times;
     duplicateSelectedRowsWithFormatting(times, orgRange);
+  } catch (error) {
+    console.error(error);
   }
 }
 
 function promptRangeSelection(message) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   const ui = SpreadsheetApp.getUi();
-  const range = ui.prompt(message, ui.ButtonSet.OK_CANCEL);
-  if (range.getSelectedButton() == ui.Button.OK) {
-    const range = sheet.getActiveRange();
-    return range;
+  const promptResponse = ui.prompt(message, ui.ButtonSet.OK_CANCEL);
+  if (promptResponse.getSelectedButton() == ui.Button.OK) {
+    return sheet.getActiveRange();
   }
+  return null; // キャンセル時はnullを返す
 }
 
 function buildTimescaleArray(startTime, endTime, interval) {
@@ -140,22 +177,5 @@ function duplicateSelectedRowsWithFormatting(times, selectedRange) {
       const mergeStartColumn = orgRows.getColumn() + mergedRange.column;
       sheet.getRange(mergeStartRow, mergeStartColumn, mergedRange.numRows, mergedRange.numColumns).merge();
     });
-  }
-}
-
-function promptDuplicateRows() {
-  const ui = SpreadsheetApp.getUi();
-  const result = ui.prompt("行の複製", "何行複製しますか？（自然数を入力してください）", ui.ButtonSet.OK_CANCEL);
-
-  if (result.getSelectedButton() == ui.Button.OK) {
-    const text = result.getResponseText().trim();
-    if (/^[1-9]\d*$/.test(text)) {
-      return parseInt(text);
-    } else {
-      ui.alert("エラー", "自然数を入力してください", ui.ButtonSet.OK);
-      return false;
-    }
-  } else {
-    return false;
   }
 }

@@ -1,9 +1,10 @@
 /**
  * 動的なポップアップウィンドウを表示して入力値を取得する関数
  * @param {Array} fieldConfigs - 入力フィールド設定の配列
+ * @param {String} message - ポップアップウィンドウの上部に表示するメッセージ
  * @return {Object} - ユーザー入力値のオブジェクト（Promiseとして使用可）
  */
-function showCustomInputDialog(fieldConfigs) {
+function showCustomInputDialog(fieldConfigs, message = '') {
   return new Promise((resolve, reject) => {
     try {
       // グローバル変数に保存するためのキーを生成
@@ -21,6 +22,7 @@ function showCustomInputDialog(fieldConfigs) {
       // テンプレートに変数を渡す
       htmlTemplate.fieldConfigs = fieldConfigs;
       htmlTemplate.dialogKey = dialogKey;
+      htmlTemplate.message = message;
       
       // HTMLを評価して取得
       const htmlOutput = htmlTemplate.evaluate()
@@ -150,8 +152,8 @@ function testCustomDialog() {
     }
   ];
   
-  // Promise形式で使用
-  showCustomInputDialog(fieldConfigs)
+  // メッセージ付きでダイアログを表示
+  showCustomInputDialog(fieldConfigs, '新しいメンバー情報を入力してください')
     .then(result => {
       console.log('入力されたデータ:', result);
       // ここで結果を処理

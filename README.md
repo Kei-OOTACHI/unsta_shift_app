@@ -12,6 +12,7 @@ Google Apps Script で動的にフォーム入力欄を生成し、カスタム�
 - タイプに応じた入力値検証（string, number, email, url, date, time, tel など）
 - 非同期処理でユーザー入力値を取得（Promise形式）
 - CacheServiceを活用したデータ管理
+- 固定ヘッダーによるメッセージ表示
 
 ## 使用方法
 
@@ -77,7 +78,7 @@ const fieldConfigs = [
 
 ```javascript
 // Promise形式で使用
-showCustomInputDialog(fieldConfigs)
+showCustomInputDialog(fieldConfigs, '新しいメンバー情報を入力してください')
   .then(result => {
     console.log('入力されたデータ:', result); 
     // 結果は {job: "入力値", memberDateId: "9901", ...} のような形式
@@ -97,6 +98,17 @@ showCustomInputDialog(fieldConfigs)
 - `date` - 日付入力
 - `time` - 時間入力
 - `tel` - 電話番号入力（形式検証あり）
+
+## メッセージ表示機能
+
+`showCustomInputDialog`関数の第2引数に文字列を渡すことで、ポップアップウィンドウの上部に固定ヘッダーとしてメッセージを表示できます。
+
+```javascript
+// メッセージ付きでダイアログを表示
+showCustomInputDialog(fieldConfigs, '新しいメンバー情報を入力してください');
+```
+
+メッセージはスクロールしても常にウィンドウの上部に表示され、ユーザーに現在の操作内容を明確に伝えることができます。
 
 ## 注意事項
 
