@@ -1,5 +1,4 @@
-function onOpen() {
-  const ui = SpreadsheetApp.getUi();
+function buildFmMenu(ui) {
   ui.createMenu("FMシート作成ツール")
     .addItem("時間軸を設定", "setTimescale")
     .addItem("行セットを複製", "duplicateRows")
