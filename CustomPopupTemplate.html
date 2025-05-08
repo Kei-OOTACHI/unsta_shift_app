@@ -90,27 +90,24 @@
         </form>
       </div>
       <div class="button-container">
-        <button type="button" class="btn btn-secondary" onclick="closeDialog()">キャンセル</button>
+        <button type="button" class="btn btn-secondary" onclick="cancelDialog()">キャンセル</button>
         <button type="button" class="btn btn-primary" onclick="submitForm()">OK</button>
       </div>
     </div>
 
     <script>
-      // ダイアログキーを変数に格納
-      const dialogKey = '<?!= dialogKey ?>';
+      const dialogKey = '<?!= dialogKey ?>'; // サーバーから渡されたキー
       
-      // ページ読み込み時にフォームフィールドを生成
       window.onload = function() {
-        // サーバーから渡されたフィールド設定を取得
-        const fieldConfigs = JSON.parse('<?!= JSON.stringify(fieldConfigs) ?>');
-        generateFormFields(fieldConfigs);
+        const fields = JSON.parse('<?!= JSON.stringify(fields) ?>');
+        generateFormFields(fields);
       };
 
       // フォームフィールドを動的に生成する関数
-      function generateFormFields(fieldConfigs) {
+      function generateFormFields(fields) {
         const formFieldsContainer = document.getElementById('formFields');
         
-        fieldConfigs.forEach(field => {
+        fields.forEach(field => {
           const fieldGroup = document.createElement('div');
           fieldGroup.className = 'form-group';
           
@@ -280,71 +277,53 @@
       function submitForm() {
         const form = document.getElementById('dataForm');
         const formData = {};
-        
-        // フォームの各入力フィールドから値を取得
         const inputs = form.querySelectorAll('input');
         let isValid = true;
-        
+
         inputs.forEach(input => {
-          // エラーメッセージ要素を取得
           const errorElement = document.getElementById(`${input.id}-error`);
-          
-          // タイプに基づいたバリデーション
           if (!validateInput(input, input.type, errorElement)) {
             isValid = false;
           } else {
-            // 有効な値の場合はフォームデータに追加
-            // 数値タイプの場合は変換
-            if (input.type === 'number') {
-              formData[input.id] = Number(input.value);
-            } else {
-              formData[input.id] = input.value;
-            }
+            formData[input.id] = (input.type === 'number') ? Number(input.value) : input.value;
           }
         });
-        
+
         if (!isValid) {
           alert('入力内容に誤りがあります。修正してください。');
           return;
         }
-        
-        // ボタンを無効化
-        document.querySelectorAll('button').forEach(btn => {
-          btn.disabled = true;
-        });
-        
-        // サーバーサイド関数を呼び出し、結果をコールバックで受け取る
+
+        disableButtons();
         google.script.run
-          .withSuccessHandler(onSuccess)
-          .withFailureHandler(onFailure)
-          .processFormData(formData, dialogKey);
+          .withSuccessHandler(closeDialog)
+          .withFailureHandler(handleFailure)
+          .handleDialogResponse(formData, dialogKey, 'submit');
       }
       
-      // 成功時のコールバック
-      function onSuccess(result) {
-        if (result.success) {
-          google.script.host.close();
-        } else {
-          alert('エラーが発生しました: ' + (result.error || '不明なエラー'));
-          // ボタンを再度有効化
-          document.querySelectorAll('button').forEach(btn => {
-            btn.disabled = false;
-          });
-        }
-      }
-      
-      // 失敗時のコールバック
-      function onFailure(error) {
-        alert('エラーが発生しました: ' + error.message);
-        // ボタンを再度有効化
-        document.querySelectorAll('button').forEach(btn => {
-          btn.disabled = false;
-        });
+      // キャンセル処理
+      function cancelDialog() {
+        disableButtons();
+        google.script.run
+          .withSuccessHandler(closeDialog)
+          .withFailureHandler(handleFailure)
+          .handleDialogResponse(null, dialogKey, 'cancel');
       }
       
       // ダイアログを閉じる
       function closeDialog() {
         google.script.host.close();
+      }
+      
+      // ボタンを無効化
+      function disableButtons() {
+        document.querySelectorAll('button').forEach(btn => btn.disabled = true);
+      }
+      
+      // 失敗時の処理
+      function handleFailure(error) {
+        alert('エラーが発生しました: ' + error.message);
+        document.querySelectorAll('button').forEach(btn => btn.disabled = false);
       }
     </script>
   </body>

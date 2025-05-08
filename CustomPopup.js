@@ -1,164 +1,205 @@
 /**
- * 動的なポップアップウィンドウを表示して入力値を取得する関数
- * @param {Array} fieldConfigs - 入力フィールド設定の配列
- * @param {String} message - ポップアップウィンドウの上部に表示するメッセージ
- * @return {Object} - ユーザー入力値のオブジェクト（Promiseとして使用可）
+ * カスタムダイアログシステムで使用するスクリプトプロパティのプレフィックス
  */
-function showCustomInputDialog(fieldConfigs, message = '') {
-  return new Promise((resolve, reject) => {
-    try {
-      // グローバル変数に保存するためのキーを生成
-      const dialogKey = 'dialog_' + new Date().getTime();
-      
-      // コールバック関数を登録
-      CacheService.getScriptCache().put(dialogKey, JSON.stringify({
-        status: 'pending',
-        data: null
-      }), 600); // 10分間有効
-      
-      // HTMLテンプレートを作成
-      const htmlTemplate = HtmlService.createTemplateFromFile('CustomPopupTemplate');
-      
-      // テンプレートに変数を渡す
-      htmlTemplate.fieldConfigs = fieldConfigs;
-      htmlTemplate.dialogKey = dialogKey;
-      htmlTemplate.message = message;
-      
-      // HTMLを評価して取得
-      const htmlOutput = htmlTemplate.evaluate()
-        .setWidth(400)
-        .setHeight(300)
-        .setTitle('データ入力');
-      
-      // モーダルダイアログとして表示
-      SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'データ入力');
-      
-      // ダイアログの結果を定期的にチェック
-      const checkInterval = 1000; // 1秒ごとにチェック
-      const maxChecks = 600; // 最大チェック回数（10分）
-      let checkCount = 0;
-      
-      const intervalId = setInterval(() => {
-        checkCount++;
-        const cacheData = CacheService.getScriptCache().get(dialogKey);
-        
-        if (cacheData) {
-          const dialogData = JSON.parse(cacheData);
-          
-          if (dialogData.status === 'completed') {
-            clearInterval(intervalId);
-            resolve(dialogData.data);
-          } else if (dialogData.status === 'failed') {
-            clearInterval(intervalId);
-            reject(new Error(dialogData.error || '不明なエラーが発生しました'));
-          }
-        }
-        
-        // タイムアウト
-        if (checkCount >= maxChecks) {
-          clearInterval(intervalId);
-          reject(new Error('ダイアログ応答のタイムアウト'));
-        }
-      }, checkInterval);
-    } catch (error) {
-      reject(error);
-    }
+const DIALOG_PROP_PREFIX = 'DIALOG_CALLBACK_';
+
+/**
+ * カスタムダイアログを表示する関数
+ * 
+ * @param {Object} options ダイアログのオプション
+ * @param {Array} options.fields フィールド定義の配列
+ * @param {String} options.title ダイアログのタイトル
+ * @param {String} options.message ダイアログのメッセージ
+ * @param {Number} options.width ダイアログの幅（省略可）
+ * @param {Number} options.height ダイアログの高さ（省略可）
+ * @param {String} options.onSubmitFuncName 送信時に呼び出す**グローバル関数名**（文字列）
+ * @param {String} options.onCancelFuncName キャンセル時に呼び出す**グローバル関数名**（文字列、省略可）
+ * @param {Object} options.context 送信/キャンセル関数に渡す追加情報（省略可、シリアライズ可能である必要あり）
+ */
+function showCustomDialog(options) {
+  // 必須オプションのチェック
+  if (!options.fields || !options.onSubmitFuncName) {
+    throw new Error('フィールド定義(fields)と送信時コールバック関数名(onSubmitFuncName)は必須です');
+  }
+  
+  // デフォルト値の設定
+  const dialogOptions = {
+    title: options.title || 'データ入力',
+    message: options.message || '',
+    width: options.width || 400,
+    height: options.height || 300,
+    fields: options.fields,
+    onSubmitFuncName: options.onSubmitFuncName,
+    onCancelFuncName: options.onCancelFuncName || null, // 省略時はnull
+    context: options.context || {}
+  };
+  
+  // 一意のキーを生成
+  const dialogKey = DIALOG_PROP_PREFIX + new Date().getTime();
+  
+  // スクリプトプロパティに情報を保存
+  const props = PropertiesService.getScriptProperties();
+  const dataToStore = JSON.stringify({
+    submitFunc: dialogOptions.onSubmitFuncName,
+    cancelFunc: dialogOptions.onCancelFuncName,
+    context: dialogOptions.context,
+    expiresAt: new Date().getTime() + (10 * 60 * 1000) // 10分で有効期限切れ
   });
+  props.setProperty(dialogKey, dataToStore);
+  
+  // テンプレートを作成
+  const htmlTemplate = HtmlService.createTemplateFromFile('CustomPopupTemplate');
+  
+  // テンプレートに変数を渡す
+  htmlTemplate.fields = dialogOptions.fields;
+  htmlTemplate.message = dialogOptions.message;
+  htmlTemplate.dialogKey = dialogKey; // キーをHTMLに渡す
+  
+  // HTMLを評価して取得
+  const htmlOutput = htmlTemplate.evaluate()
+    .setWidth(dialogOptions.width)
+    .setHeight(dialogOptions.height)
+    .setTitle(dialogOptions.title);
+  
+  // モーダルダイアログとして表示
+  SpreadsheetApp.getUi().showModalDialog(htmlOutput, dialogOptions.title);
 }
 
 /**
- * フォームから送信されたデータを処理する関数
- * @param {Object} formData - フォームから送信されたデータ
- * @param {String} dialogKey - ダイアログを識別するキー
- * @return {Object} - 処理結果
+ * フォームから送信されたデータを処理する中央ハンドラ関数
+ * 
+ * @param {Object} formData フォームデータ（キャンセルの場合はnull）
+ * @param {String} dialogKey ダイアログキー
+ * @param {String} action アクション（"submit" または "cancel"）
+ * @return {Object} 処理結果
  */
-function processFormData(formData, dialogKey) {
+function handleDialogResponse(formData, dialogKey, action) {
+  const props = PropertiesService.getScriptProperties();
+  const storedData = props.getProperty(dialogKey);
+  
+  // 不要になったプロパティは削除
+  props.deleteProperty(dialogKey);
+  
+  if (!storedData) {
+    console.error('ダイアログ情報が見つかりません:', dialogKey);
+    return { success: false, error: 'ダイアログ情報が見つかりません。タイムアウトした可能性があります。' };
+  }
+  
   try {
-    // ここで必要な処理を行う（例：スプレッドシートに保存など）
+    const parsedData = JSON.parse(storedData);
     
-    // 結果をキャッシュに保存
-    CacheService.getScriptCache().put(dialogKey, JSON.stringify({
-      status: 'completed',
-      data: formData
-    }), 600);
+    // 有効期限チェック
+    if (parsedData.expiresAt < new Date().getTime()) {
+      console.error('ダイアログ情報が期限切れです:', dialogKey);
+      return { success: false, error: 'ダイアログセッションがタイムアウトしました。' };
+    }
     
-    return { success: true, data: formData };
+    // 実行する関数名を決定
+    const funcName = (action === 'submit') ? parsedData.submitFunc : parsedData.cancelFunc;
+    
+    if (funcName && typeof this[funcName] === 'function') {
+      // グローバルスコープから関数を見つけて実行
+      if (action === 'submit') {
+        this[funcName](formData, parsedData.context); // contextも渡す
+      } else {
+        this[funcName](parsedData.context); // contextも渡す
+      }
+      return { success: true };
+    } else if (funcName) {
+      console.error('指定されたコールバック関数が見つかりません:', funcName);
+      return { success: false, error: 'コールバック関数が見つかりません: ' + funcName };
+    } else if (action === 'cancel'){
+      // キャンセル関数が指定されていない場合は正常終了
+      return { success: true };
+    } else {
+       return { success: false, error: '実行すべきコールバック関数がありません' };
+    }
+    
   } catch (error) {
-    // エラー情報をキャッシュに保存
-    CacheService.getScriptCache().put(dialogKey, JSON.stringify({
-      status: 'failed',
-      error: error.message
-    }), 600);
-    
-    return { success: false, error: error.message };
+    console.error('ダイアログ応答処理エラー:', dialogKey, error);
+    return { success: false, error: 'エラーが発生しました: ' + String(error) };
   }
 }
 
 /**
- * 使用例
+ * 古いダイアログプロパティをクリーンアップする関数（トリガーなどで定期実行推奨）
  */
-function testCustomDialog() {
+function cleanupDialogProperties() {
+  const props = PropertiesService.getScriptProperties();
+  const allProps = props.getProperties();
+  const now = new Date().getTime();
+  
+  for (const key in allProps) {
+    if (key.startsWith(DIALOG_PROP_PREFIX)) {
+      try {
+        const parsedData = JSON.parse(allProps[key]);
+        if (parsedData.expiresAt < now) {
+          props.deleteProperty(key);
+          console.log('期限切れのダイアログプロパティを削除:', key);
+        }
+      } catch (e) {
+        // 不正なJSONの場合は削除
+        props.deleteProperty(key);
+        console.log('不正なダイアログプロパティを削除:', key);
+      }
+    }
+  }
+}
+
+/**
+ * 使用例：シフト時間入力ダイアログ
+ */
+function showShiftTimeInputDialog(startCell) {
   const fieldConfigs = [
     {
-      id: "job",
-      label: "業務内容",
-      type: "string",
+      id: "startTime",
+      label: "開始時刻",
+      type: "time",
       required: true,
-      value: ""
     },
     {
-      id: "memberDateId",
-      label: "メンバーID",
-      type: "string",
+      id: "endTime",
+      label: "終了時刻",
+      type: "time",
       required: true,
-      value: "9901"
     },
     {
-      id: "email",
-      label: "メールアドレス",
-      type: "email",
-      required: true,
-      value: ""
-    },
-    {
-      id: "website",
-      label: "ウェブサイト",
-      type: "url",
-      required: false,
-      value: ""
-    },
-    {
-      id: "age",
-      label: "年齢",
+      id: "interval",
+      label: "時間間隔",
       type: "number",
-      required: false,
-      min: 18,
-      max: 100,
-      value: ""
+      required: true,
     },
-    {
-      id: "startDate",
-      label: "開始日",
-      type: "date",
-      required: false,
-      value: ""
-    },
-    {
-      id: "phone",
-      label: "電話番号",
-      type: "tel",
-      required: false,
-      value: ""
-    }
   ];
   
-  // メッセージ付きでダイアログを表示
-  showCustomInputDialog(fieldConfigs, '新しいメンバー情報を入力してください')
-    .then(result => {
-      console.log('入力されたデータ:', result);
-      // ここで結果を処理
-    })
-    .catch(error => {
-      console.error('エラー:', error);
-    });
+  showCustomDialog({
+    fields: fieldConfigs,
+    title: 'シフト時間設定',
+    message: 'シフトの開始時刻、終了時刻、時間間隔を入力',
+    onSubmitFuncName: 'handleFormSubmit',
+    onCancelFuncName: 'handleFormCancel',
+    context: { startCell: startCell }
+  });
+}
+
+/**
+ * 使用例：行複製ダイアログ
+ */
+function showRowDuplicationDialog(orgRange) {
+  const fieldConfigs = [
+    {
+      id: "times",
+      label: "複製する行数",
+      type: "number",
+      required: true,
+    },
+  ];
+  
+  showCustomDialog({
+    fields: fieldConfigs,
+    title: '行複製設定',
+    message: '行セットを何回複製するか入力',
+    onSubmitFuncName: 'handleFormSubmit',
+    onCancelFuncName: 'handleFormCancel',
+    context: { orgRange: orgRange }
+  });
 } 
