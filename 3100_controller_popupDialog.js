@@ -48,7 +48,7 @@ function showCustomDialog(options) {
   props.setProperty(dialogKey, dataToStore);
   
   // テンプレートを作成
-  const htmlTemplate = HtmlService.createTemplateFromFile('CustomPopupTemplate');
+  const htmlTemplate = HtmlService.createTemplateFromFile('3101_view_CustomPopupTemplate');
   
   // テンプレートに変数を渡す
   htmlTemplate.fields = dialogOptions.fields;
