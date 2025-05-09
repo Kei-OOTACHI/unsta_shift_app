@@ -20,11 +20,11 @@ function setTimescale() {
 
   showCustomDialog({
     fields: fieldConfigs,
-    title: 'シフト時間設定',
-    message: 'シフトの開始時刻、終了時刻、時間間隔を入力',
-    onSubmitFuncName: 'processTimescaleInput',
-    onCancelFuncName: 'handleDialogCancel',
-    context: { startCellA1: startCell.getA1Notation() }
+    title: "シフト時間設定",
+    message: "シフトの開始時刻、終了時刻、時間間隔を入力",
+    onSubmitFuncName: "processTimescaleInput",
+    onCancelFuncName: "handleDialogCancel",
+    context: { startCellA1: startCell.getA1Notation() },
   });
 }
 
@@ -40,26 +40,26 @@ function processTimescaleInput(formData, context) {
     const range = sheet.getRange(startCell.getRow(), startCell.getColumn(), 1, timescale.length);
     range.setValues([timescale]);
   } catch (error) {
-    console.error('時間軸設定エラー:', error);
-    SpreadsheetApp.getUi().alert('エラーが発生しました: ' + error.message);
+    console.error("時間軸設定エラー:", error);
+    SpreadsheetApp.getUi().alert("エラーが発生しました: " + error.message);
   }
 }
 
 // --- 行複製機能 ---
 function duplicateRows() {
-  const orgRange = promptRangeSelection("複製する行セットは、現在選択されている行で問題ないですか。\n  問題なければ「OK」を押下。\n  選びなおす場合は「キャンセル」を押下し、再実行。");
+  const orgRange = promptRangeSelection(
+    "複製する行セットは、現在選択されている行で問題ないですか。\n  問題なければ「OK」を押下。\n  選びなおす場合は「キャンセル」を押下し、再実行。"
+  );
   if (!orgRange) return;
 
-  const fieldConfigs = [
-    { id: "times", label: "複製する行数", type: "number", required: true },
-  ];
+  const fieldConfigs = [{ id: "times", label: "複製する行数", type: "number", required: true }];
 
   showCustomDialog({
     fields: fieldConfigs,
-    title: '行複製設定',
-    message: '行セットを何回複製するか入力',
-    onSubmitFuncName: 'processDuplicateRowsInput',
-    context: { orgRangeA1: orgRange.getA1Notation() }
+    title: "行複製設定",
+    message: "行セットを何回複製するか入力",
+    onSubmitFuncName: "processDuplicateRowsInput",
+    context: { orgRangeA1: orgRange.getA1Notation() },
   });
 }
 
@@ -71,13 +71,13 @@ function processDuplicateRowsInput(formData, context) {
     const orgRangeA1 = context.orgRangeA1;
     Logger.log(orgRangeA1);
     const orgRange = sheet.getRange(orgRangeA1);
-    
+
     const times = formData.times;
     duplicateSelectedRowsWithFormatting(times, orgRange);
   } catch (error) {
-    console.error('行複製エラー:', error);
-    console.error('エラー詳細:', error.stack);
-    SpreadsheetApp.getUi().alert('エラーが発生しました: ' + error.message);
+    console.error("行複製エラー:", error);
+    console.error("エラー詳細:", error.stack);
+    SpreadsheetApp.getUi().alert("エラーが発生しました: " + error.message);
   }
 }
 
@@ -85,34 +85,8 @@ function processDuplicateRowsInput(formData, context) {
 
 // ダイアログキャンセル時の共通処理 (グローバル関数)
 function handleDialogCancel(context) {
-  console.log('ダイアログがキャンセルされました。 Context:', context);
+  console.log("ダイアログがキャンセルされました。 Context:", context);
   // 必要に応じて追加の処理を記述
-}
-
-// 範囲選択プロンプト
-function promptRangeSelection(message) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  const ui = SpreadsheetApp.getUi();
-  const selectedRange = sheet.getActiveRange();
-  
-  // 列全体が選択されているかチェック
-  if (!selectedRange.isStartRowBounded()) {
-    ui.alert(
-      "エラー",
-      "列全体（A列やAA:AZ列など）が選択されています。\n行を選択してから再度実行してください。",
-      ui.ButtonSet.OK
-    );
-    return null;
-  }
-  
-  const res = ui.alert("範囲の選択", message, ui.ButtonSet.OK_CANCEL);
-  if (res == ui.Button.OK) {
-    Logger.log(selectedRange.getA1Notation() + " was selected");
-    return selectedRange;
-  } else {
-    Logger.log("canceled");
-    return null;
-  }
 }
 
 // 時間軸配列生成
@@ -156,7 +130,7 @@ function buildTimescaleArray(startTime, endTime, interval) {
 function duplicateSelectedRowsWithFormatting(times, selectedRange) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   const lastCol = sheet.getLastColumn();
-  Logger.log(selectedRange.getA1Notation()+"の範囲を複製します。");
+  Logger.log(selectedRange.getA1Notation() + "の範囲を複製します。");
   const orgFirstRow = selectedRange.getRow();
   const orgLastRow = selectedRange.getLastRow();
   const orgRows = sheet.getRange(orgFirstRow, 1, orgLastRow - orgFirstRow + 1, lastCol);
@@ -174,7 +148,7 @@ function duplicateSelectedRowsWithFormatting(times, selectedRange) {
     const startRow = orgRows.getLastRow() + 1 + i * numRows;
     sheet.insertRowsAfter(orgRows.getLastRow() + i * numRows, numRows);
     const targetRange = sheet.getRange(startRow, orgRows.getColumn(), numRows, numColumns);
-    
+
     // 値、書式、結合セルを一度にコピー
     orgRows.copyTo(targetRange, SpreadsheetApp.CopyPasteType.PASTE_NORMAL);
 
@@ -184,4 +158,3 @@ function duplicateSelectedRowsWithFormatting(times, selectedRange) {
     }
   }
 }
-
