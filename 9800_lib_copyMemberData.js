@@ -20,8 +20,8 @@ const REQUIRED_MEMBER_DATA_HEADERS = {
     UPDATE: [COL_HEADER_NAMES.MEMBER_DATE_ID]
   }
 };
-const MEMBER_DATA_SHEET_NAME = "メンバーリスト";
-const GANTT_TEMPLATE_SHEET_NAME = "ガントチャートテンプレ";
+const MEMBER_DATA_SHEET_NAME = "メンバー情報";
+const GANTT_TEMPLATE_SHEET_NAME = "GCテンプレ";
 
 /**
  * メンバーリストシートからデータとヘッダーを取得する

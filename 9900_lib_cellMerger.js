@@ -1,4 +1,4 @@
-function buiidCommonMenu(ui) {
+function buildCommonMenu(ui) {
   ui.createMenu("セル結合ツール")
     .addItem("横方向に同じ値を結合", "mergeSameValuesHorizontally")
     .addItem("縦方向に同じ値を結合", "mergeSameValuesVertically")

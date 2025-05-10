@@ -10,6 +10,11 @@
  * - generateMemberDateId
  */
 
+function buildGanttMenu(ui) {
+  ui.createMenu("ガントチャート作成")
+    .addItem("🟩局ごとのガントチャートシートを作成", "promptUserForGanttChartInfo")
+    .addToUi();
+}
 /**
  * メンバーデータを部署ごとにグループ化し、オブジェクト形式に変換
  * @param {Array} memberData - メンバー情報の2次元配列
