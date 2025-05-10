@@ -3,23 +3,85 @@
  */
 
 // 共通定数
+const COL_HEADER_NAMES = {
+  DEPT: "dept",
+  EMAIL: "email",
+  MEMBER_ID: "memberId",
+  MEMBER_DATE_ID: "memberDateId",
+  DATE: "date"
+};
+const REQUIRED_MEMBER_DATA_HEADERS = {
+  DATA_SHEET: {
+    INITIALIZE: [COL_HEADER_NAMES.DEPT, COL_HEADER_NAMES.EMAIL],
+    UPDATE: [COL_HEADER_NAMES.DEPT, COL_HEADER_NAMES.EMAIL, COL_HEADER_NAMES.MEMBER_ID]
+  },
+  GANTT_SHEETS: {
+    INITIALIZE: [COL_HEADER_NAMES.MEMBER_DATE_ID, COL_HEADER_NAMES.DATE],
+    UPDATE: [COL_HEADER_NAMES.MEMBER_DATE_ID]
+  }
+};
 const MEMBER_DATA_SHEET_NAME = "メンバーリスト";
-const REQUIRED_MEMBER_HEADERS = ["dept", "email"];
-const REQUIRED_GANTT_HEADERS = ["memberDateId", "date"];
+const GANTT_TEMPLATE_SHEET_NAME = "ガントチャートテンプレ";
 
 /**
- * メンバー情報マスタシートのデータを取得する
- * @param {SpreadsheetApp.Spreadsheet} spreadsheet - メンバー情報が含まれるスプレッドシート
- * @returns {Array} メンバー情報の2次元配列
+ * メンバーリストシートからデータとヘッダーを取得する
+ * @param {SpreadsheetApp.Spreadsheet} spreadsheet - メンバーリストが含まれるスプレッドシート
+ * @param {Array} requiredHeaders - 必須ヘッダーのリスト
+ * @returns {Object} メンバーデータとヘッダーのオブジェクト
+ * @property {Array} data - メンバーデータの2次元配列
+ * @property {Array} headers - ヘッダー行の配列
  */
-function getMemberData(spreadsheet) {
-  const sheet = spreadsheet.getSheetByName(MEMBER_DATA_SHEET_NAME);
-  if (!sheet) {
+function getMemberDataAndHeaders(spreadsheet, requiredHeaders) {
+  const memberSheet = spreadsheet.getSheetByName(MEMBER_DATA_SHEET_NAME);
+  if (!memberSheet) {
     throw new Error(`シート「${MEMBER_DATA_SHEET_NAME}」が見つかりません。`);
   }
   
-  const dataRange = sheet.getDataRange();
-  return dataRange.getValues();
+  const memberDataRange = memberSheet.getDataRange();
+  const memberData = memberDataRange.getValues();
+  const memberHeaders = memberData[0];
+
+  // ヘッダー検証を内部で実行
+  validateHeaders(memberHeaders, requiredHeaders);
+  
+  return {
+    data: memberData,
+    headers: memberHeaders
+  };
+}
+
+/**
+ * ガントチャートのヘッダーを取得する
+ * @param {SpreadsheetApp.Sheet} sheet - ガントチャートシート
+ * @param {string} headerRangeA1 - ヘッダー範囲のA1記法
+ * @param {Array} requiredHeaders - 必須ヘッダーのリスト
+ * @returns {Object} ヘッダー情報のオブジェクト
+ * @property {Array} headers - ヘッダー行の配列
+ * @property {number} headerRow - ヘッダー行の行番号
+ * @property {number} startCol - 開始列の列番号
+ * @property {number} endCol - 終了列の列番号
+ */
+function getGanttHeaders(sheet, headerRangeA1, requiredHeaders) {
+  const headerRangeParts = headerRangeA1.match(/([A-Z]+)([0-9]+):([A-Z]+)([0-9]+)/);
+  if (!headerRangeParts) {
+    throw new Error(`ヘッダー範囲の形式が不正です: ${headerRangeA1}`);
+  }
+
+  const headerRow = parseInt(headerRangeParts[2]);
+  const startCol = sheet.getRange(headerRangeParts[1] + "1").getColumn();
+  const endCol = sheet.getRange(headerRangeParts[3] + "1").getColumn();
+  const headerRange = sheet.getRange(headerRow, startCol, 1, endCol - startCol + 1);
+  const headers = headerRange.getValues()[0];
+
+  // ヘッダー検証を内部で実行
+  validateHeaders(headers, requiredHeaders);
+
+  return {
+    headers,
+    headerRow,
+    startCol,
+    endCol
+  };
 }
 
 /**
@@ -46,6 +108,29 @@ function validateHeaders(headers, requiredHeaders) {
  */
 function findCommonHeaders(memberHeaders, ganttHeaders) {
   return memberHeaders.filter(header => ganttHeaders.includes(header));
+}
+
+/**
+ * メンバーヘッダーとガントヘッダーのインデックスを事前計算
+ * @param {Array} memberHeaders - メンバーヘッダーの配列
+ * @param {Array} ganttHeaders - ガントヘッダーの配列
+ * @returns {Object} ヘッダーのインデックス
+ */
+function prepareHeaderIndices(memberHeaders, ganttHeaders) {
+  const headerIndices = {
+    member: {}, // メンバーヘッダーのインデックス
+    gantt: {}, // ガントヘッダーのインデックス
+  };
+
+  memberHeaders.forEach((header, index) => {
+    headerIndices.member[header] = index;
+  });
+
+  ganttHeaders.forEach((header, index) => {
+    headerIndices.gantt[header] = index;
+  });
+
+  return headerIndices;
 }
 
 /**
@@ -93,25 +178,27 @@ function filterSheets(sheets, excludeNames) {
  */
 function generateMemberIds(memberData) {
   const headers = memberData[0];
-  const emailIndex = headers.indexOf('email');
-  let memberIdIndex = headers.indexOf('memberId');
+  const emailIndex = headers.indexOf(COL_HEADER_NAMES.EMAIL);
+  let memberIdIndex = headers.indexOf(COL_HEADER_NAMES.MEMBER_ID);
   
   // memberIdカラムがなければ追加
   if (memberIdIndex === -1) {
-    headers.push('memberId');
+    headers.push(COL_HEADER_NAMES.MEMBER_ID);
     memberIdIndex = headers.length - 1;
   }
   
   // メールアドレスからメンバーID生成
-  for (let i = 1; i < memberData.length; i++) {
-    const email = memberData[i][emailIndex];
+  return memberData.map((row, index) => {
+    // ヘッダー行はそのまま返す
+    if (index === 0) return row;
+    
+    const email = row[emailIndex];
     if (email && typeof email === 'string') {
       const memberId = email.split('@')[0];
-      memberData[i][memberIdIndex] = memberId;
+      row[memberIdIndex] = memberId;
     }
-  }
-  
-  return memberData;
+    return row;
+  });
 }
 
 /**
@@ -121,20 +208,46 @@ function generateMemberIds(memberData) {
  */
 function createMemberDataMap(memberData) {
   const headers = memberData[0];
-  const memberIdIndex = headers.indexOf('memberId');
-  const dataMap = {};
+  const memberIdIndex = headers.indexOf(COL_HEADER_NAMES.MEMBER_ID);
   
-  for (let i = 1; i < memberData.length; i++) {
-    const row = memberData[i];
-    const memberId = row[memberIdIndex];
-    if (memberId) {
-      dataMap[memberId] = {};
+  // メンバーIDをキーにしたオブジェクトを作成
+  // ここではforループの代わりにreduceを使用して、よりシンプルに実装
+  return memberData
+    .slice(1) // ヘッダー行を除外
+    .reduce((dataMap, row) => {
+      const memberId = row[memberIdIndex];
+      if (memberId) {
+        dataMap[memberId] = {};
+        
+        // 各ヘッダーに対応する値をマップに設定
+        headers.forEach((header, j) => {
+          dataMap[memberId][header] = row[j];
+        });
+      }
+      return dataMap;
+    }, {});
+}
+
+/**
+ * 共通ヘッダーに基づいてメンバーデータをガントチャートの行にコピー
+ * @param {Array} commonHeaders - 共通するヘッダーの配列
+ * @param {Object} headerIndices - ヘッダーのインデックス情報
+ * @param {Array} ganttRow - コピー先のガントチャート行データ
+ * @param {Object} memberData - コピー元のメンバーデータ (オブジェクト形式)
+ * @param {Array} excludeHeaders - コピーから除外するヘッダー（オプション）
+ * @returns {Array} 更新されたガントチャート行データ
+ */
+function copyMemberDataToGanttRow(commonHeaders, headerIndices, ganttRow, memberData, excludeHeaders = []) {
+  commonHeaders.forEach((header) => {
+    // 除外ヘッダーリストをチェック
+    if (!excludeHeaders.includes(header)) {
+      const ganttIndex = headerIndices.gantt[header];
       
-      for (let j = 0; j < headers.length; j++) {
-        dataMap[memberId][headers[j]] = row[j];
+      if (ganttIndex !== undefined && memberData[header] !== undefined) {
+        ganttRow[ganttIndex] = memberData[header];
       }
     }
-  }
+  });
   
-  return dataMap;
+  return ganttRow;
 } 
