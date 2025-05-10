@@ -11,9 +11,8 @@
  */
 
 function buildGanttMenu(ui) {
-  ui.createMenu("ガントチャート作成")
-    .addItem("🟩局ごとのガントチャートシートを作成", "promptUserForGanttChartInfo")
-    .addToUi();
+  return ui.createMenu("ガントチャート作成")
+    .addItem("局ごとのガントチャートシートを作成", "promptUserForGanttChartInfo");
 }
 /**
  * メンバーデータを部署ごとにグループ化し、オブジェクト形式に変換

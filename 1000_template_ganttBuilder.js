@@ -1,8 +1,7 @@
 function buildFmMenu(ui) {
-  ui.createMenu("🟩FMシート作成ツール")
+  return ui.createMenu("FMシート作成")
     .addItem("時間軸を設定", "setTimescale")
-    .addItem("行セットを複製", "duplicateRows")
-    .addToUi();
+    .addItem("行セットを複製", "duplicateRows");
 }
 
 // --- 時間軸設定機能 ---

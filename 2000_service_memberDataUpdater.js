@@ -155,7 +155,6 @@ function updateMemberDataInGanttCharts() {
  * @param {SpreadsheetApp.Ui} ui - SpreadsheetAppのUIオブジェクト
  */
 function buildMemberMenu(ui) {
-  ui.createMenu("メンバー管理")
-    .addItem("🟩メンバー情報を全シートに更新", "updateMemberDataInGanttCharts")
-    .addToUi();
+  return ui.createMenu("メンバー管理")
+    .addItem("メンバー情報を全シートに更新", "updateMemberDataInGanttCharts");
 }

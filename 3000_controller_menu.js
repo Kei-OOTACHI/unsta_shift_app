@@ -1,7 +1,9 @@
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  buildFmMenu(ui);
-  buildGanttMenu(ui);
-  buildMemberMenu(ui);
-  // buildCommonMenu(ui);
+  ui.createMenu("🤖自動化ツール")
+    .addSubMenu(buildFmMenu(ui))
+    .addSubMenu(buildGanttMenu(ui))
+    .addSubMenu(buildMemberMenu(ui))
+    .addSubMenu(buildCommonMenu(ui))
+    .addToUi();
 }
