@@ -108,7 +108,9 @@ function handleDialogResponse(formData, dialogKey, action) {
   props.deleteProperty(dialogKey);
 
   if (!storedData) {
-    console.error("ダイアログ情報が見つかりません:", dialogKey);
+    const errorMsg = "ダイアログ情報が見つかりません: " + dialogKey;
+    console.error(errorMsg);
+    Logger.log(errorMsg);
     return { success: false, error: "ダイアログ情報が見つかりません。タイムアウトした可能性があります。" };
   }
 
@@ -117,7 +119,9 @@ function handleDialogResponse(formData, dialogKey, action) {
 
     // 有効期限チェック
     if (parsedData.expiresAt < new Date().getTime()) {
-      console.error("ダイアログ情報が期限切れです:", dialogKey);
+      const errorMsg = "ダイアログ情報が期限切れです: " + dialogKey;
+      console.error(errorMsg);
+      Logger.log(errorMsg);
       return { success: false, error: "ダイアログセッションがタイムアウトしました。" };
     }
 
@@ -133,16 +137,23 @@ function handleDialogResponse(formData, dialogKey, action) {
       }
       return { success: true };
     } else if (funcName) {
-      console.error("指定されたコールバック関数が見つかりません:", funcName);
+      const errorMsg = "指定されたコールバック関数が見つかりません: " + funcName;
+      console.error(errorMsg);
+      Logger.log(errorMsg);
       return { success: false, error: "コールバック関数が見つかりません: " + funcName };
     } else if (action === "cancel") {
       // キャンセル関数が指定されていない場合は正常終了
       return { success: true };
     } else {
-      return { success: false, error: "実行すべきコールバック関数がありません" };
+      const errorMsg = "実行すべきコールバック関数がありません";
+      console.error(errorMsg);
+      Logger.log(errorMsg);
+      return { success: false, error: errorMsg };
     }
   } catch (error) {
-    console.error("ダイアログ応答処理エラー:", dialogKey, error);
+    const errorMsg = "ダイアログ応答処理エラー: " + dialogKey + " [" + error.toString() + "]";
+    console.error(errorMsg);
+    Logger.log(errorMsg);
     return { success: false, error: "エラーが発生しました: " + String(error) };
   }
 }

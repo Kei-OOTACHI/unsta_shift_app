@@ -94,7 +94,8 @@ function validateHeaders(headers, requiredHeaders) {
   const missingHeaders = requiredHeaders.filter(required => !headers.includes(required));
   
   if (missingHeaders.length > 0) {
-    throw new Error(`必須ヘッダーが見つかりません: ${missingHeaders.join(', ')}`);
+    throw new Error(`必須ヘッダーが見つかりません: ${missingHeaders.join(', ')}
+    ${GANTT_TEMPLATE_SHEET_NAME}のヘッダー行に${requiredHeaders.join(', ')}を追加してください。`);
   }
   
   return true;
