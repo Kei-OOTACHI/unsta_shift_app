@@ -10,10 +10,16 @@
  * - generateMemberDateId
  */
 
+/**
+ * ガントチャート作成メニューを構築
+ * @param {SpreadsheetApp.Ui} ui - SpreadsheetAppのUIオブジェクト
+ * @returns {SpreadsheetApp.Menu} 構築されたメニューオブジェクト
+ */
 function buildGanttMenu(ui) {
   return ui.createMenu("ガントチャート作成")
     .addItem("局ごとのガントチャートシートを作成", "promptUserForGanttChartInfo");
 }
+
 /**
  * メンバーデータを部署ごとにグループ化し、オブジェクト形式に変換
  * @param {Array} memberData - メンバー情報の2次元配列
@@ -26,23 +32,23 @@ function groupMemberDataByDept(memberData) {
 
   // ヘッダーからオブジェクトのプロパティ名を設定
   for (let i = 1; i < memberData.length; i++) {
-    const dept = memberData[i][deptIndex];
+    const row = memberData[i];
+    const dept = row[deptIndex];
     if (!dept) continue;
 
     if (!groupedData[dept]) {
       groupedData[dept] = {
-        headers: headers.slice(),  // ヘッダー行を保存
-        members: new Map(),        // メンバーをMapで保持して順序を維持
+        headers: headers.slice(),
+        members: new Map()
       };
     }
 
-    // メンバー行をオブジェクトに変換
-    const memberObj = {};
-    headers.forEach((header, j) => {
-      memberObj[header] = memberData[i][j];
-    });
+    // メンバー行をオブジェクトに変換（一度のループで処理）
+    const memberObj = headers.reduce((obj, header, j) => {
+      obj[header] = row[j];
+      return obj;
+    }, {});
 
-    // 部署グループのMapにメンバーオブジェクトを追加（キーにインデックスを使用して順序保持）
     groupedData[dept].members.set(i, memberObj);
   }
 
@@ -77,21 +83,14 @@ function createDeptSheet(spreadsheet, templateSheet, dept) {
 function prepareGanttData(deptData, ganttHeaders, commonHeaders, daysPerMember, insertBlankLine) {
   const headerIndices = prepareHeaderIndices(deptData.headers, ganttHeaders);
   const memberDateIdIndex = headerIndices.gantt[COL_HEADER_NAMES.MEMBER_DATE_ID];
-
-  // Mapの値（メンバーオブジェクト）は挿入順で取得されるため、ソート不要
   const members = Array.from(deptData.members.values());
   
-  // 各メンバーごとのベース行を準備
+  // 各メンバーごとのベース行を準備（Mapを使用して効率的に処理）
   const memberBaseRows = members.map(memberObj => {
     const memberId = memberObj[COL_HEADER_NAMES.MEMBER_ID];
-    
-    // 基本行を作成
     const baseRow = new Array(ganttHeaders.length).fill("");
-    
-    // day1のmemberDateIdを設定（複製後に修正する）
     baseRow[memberDateIdIndex] = generateMemberDateId(memberId, "day1");
     
-    // 共通関数を使用してメンバー情報をコピー
     copyMemberDataToGanttRow(
       commonHeaders,
       headerIndices,
@@ -103,39 +102,31 @@ function prepareGanttData(deptData, ganttHeaders, commonHeaders, daysPerMember, 
     return baseRow;
   });
   
-  // 全メンバー分のベース行を結合し、一度にduplicateMemberDataRowsで複製する
-  // これにより、メンバー間の空白行も適切に挿入される
+  // 全メンバー分のベース行を結合
   const allMemberRows = duplicateMemberDataRows(memberBaseRows, daysPerMember, insertBlankLine);
   
-  // 複製された各行のmemberDateIdを修正
+  // 複製された各行のmemberDateIdを修正（効率的な処理）
   let currentMemberIndex = 0;
   let dayCounter = 1;
   
-  for (let i = 0; i < allMemberRows.length; i++) {
-    const row = allMemberRows[i];
-    
-    // 空白行はスキップ
+  return allMemberRows.map(row => {
     if (row.every(cell => cell === "")) {
       currentMemberIndex++;
       dayCounter = 1;
-      continue;
+      return row;
     }
     
-    // 現在のメンバーIDを取得
     const memberId = members[currentMemberIndex][COL_HEADER_NAMES.MEMBER_ID];
-    
-    // memberDateIdを更新
     row[memberDateIdIndex] = generateMemberDateId(memberId, `day${dayCounter}`);
     
-    // 日数カウンターを更新
     dayCounter++;
     if (dayCounter > daysPerMember) {
       dayCounter = 1;
       currentMemberIndex++;
     }
-  }
-  
-  return allMemberRows;
+    
+    return row;
+  });
 }
 
 /**
@@ -305,23 +296,16 @@ function createGanttChartsWithMemberData(targetUrl, daysPerMember, insertBlankLi
  */
 function duplicateMemberDataRows(dataArray, duplicateCount, insertBlankLine) {
   const resultArray = [];
-
-  dataArray.forEach((row) => {
-    // 各行を指定された回数だけ複製
-    for (let i = 0; i < duplicateCount; i++) {
-      resultArray.push([...row]); // スプレッド演算子で配列をコピー
-    }
-
-    // 複製された行のまとまりの間に空白行を挿入
+  const emptyRow = new Array(dataArray[0].length).fill("");
+  
+  dataArray.forEach(row => {
+    // 各行を指定された回数だけ複製（Array.fromを使用して効率的に処理）
+    resultArray.push(...Array.from({ length: duplicateCount }, () => [...row]));
+    
     if (insertBlankLine) {
-      resultArray.push(new Array(row.length).fill(""));
+      resultArray.push([...emptyRow]);
     }
   });
-
-  // 最後に追加された空白行を削除（今後ガントチャートの下にも何か記入するようであればコメントアウトを解除）
-  // if (insertBlankLine && resultArray.length > 0) {
-  //   resultArray.pop();
-  // }
-
+  
   return resultArray;
 }
