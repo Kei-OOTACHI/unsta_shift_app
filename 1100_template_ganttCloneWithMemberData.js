@@ -137,6 +137,10 @@ function createGanttChartsWithMemberData(targetUrl, daysPerMember, insertBlankLi
     Logger.log("メンバーIDを生成中...");
     const memberDataWithIds = generateMemberIds(memberData);
 
+    // 4.1. メンバー情報シートにmemberIdを書き戻し
+    Logger.log("メンバー情報シートにmemberIdを書き戻し中...");
+    updateMemberDataSheetWithIds(activeSpreadsheet, memberDataWithIds);
+
     // 5. 部署ごとにグループ化してオブジェクト形式に変換
     Logger.log("部署ごとにメンバーデータをグループ化中...");
     const groupedMemberData = groupMemberDataByDept(memberDataWithIds);
@@ -360,7 +364,10 @@ function createDeptGanttSheet(
 function prepareGanttData(deptData, ganttHeaders, commonHeaders, daysPerMember, insertBlankLine) {
   const headerIndices = prepareHeaderIndices(deptData.headers, ganttHeaders);
   const memberDateIdIndex = headerIndices.gantt[COL_HEADER_NAMES.MEMBER_DATE_ID];
+  const memberIdIndex = headerIndices.gantt[COL_HEADER_NAMES.MEMBER_ID];
   const members = Array.from(deptData.members.values());
+  
+  Logger.log(`ガントヘッダーインデックス: memberDateId=${memberDateIdIndex}, memberId=${memberIdIndex}`);
   
   // メンバーが存在しない場合は空の配列を返す
   if (!members || members.length === 0) {
@@ -377,6 +384,12 @@ function prepareGanttData(deptData, ganttHeaders, commonHeaders, daysPerMember, 
     const memberId = memberObj[COL_HEADER_NAMES.MEMBER_ID];
     const baseRow = new Array(ganttHeaders.length).fill("");
     baseRow[memberDateIdIndex] = generateMemberDateId(memberId, "day1");
+    
+    // memberIdを展開
+    if (memberIdIndex !== undefined) {
+      baseRow[memberIdIndex] = memberId;
+      Logger.log(`メンバーID「${memberId}」をガントチャート行に設定`);
+    }
     
     copyMemberDataToGanttRow(
       commonHeaders,
@@ -397,7 +410,7 @@ function prepareGanttData(deptData, ganttHeaders, commonHeaders, daysPerMember, 
   // 全メンバー分のベース行を結合
   const allMemberRows = duplicateMemberDataRows(memberBaseRows, daysPerMember, insertBlankLine);
   
-  // 複製された各行のmemberDateIdを修正（効率的な処理）
+  // 複製された各行のmemberDateIdとmemberIdを修正（効率的な処理）
   let currentMemberIndex = 0;
   let dayCounter = 1;
   
@@ -414,7 +427,13 @@ function prepareGanttData(deptData, ganttHeaders, commonHeaders, daysPerMember, 
       return row;
     }
     
-    row[memberDateIdIndex] = generateMemberDateId(currentMember[COL_HEADER_NAMES.MEMBER_ID], `day${dayCounter}`);
+    const memberId = currentMember[COL_HEADER_NAMES.MEMBER_ID];
+    row[memberDateIdIndex] = generateMemberDateId(memberId, `day${dayCounter}`);
+    
+    // memberIdを各行に展開
+    if (memberIdIndex !== undefined) {
+      row[memberIdIndex] = memberId;
+    }
     
     dayCounter++;
     if (dayCounter > daysPerMember) {
@@ -453,4 +472,48 @@ function duplicateMemberDataRows(dataArray, duplicateCount, insertBlankLine) {
   });
   
   return resultArray;
+}
+
+/**
+ * メンバー情報シートにmemberIdを書き戻す
+ * @param {SpreadsheetApp.Spreadsheet} spreadsheet - スプレッドシート
+ * @param {Array} memberDataWithIds - memberIdが追加されたメンバーデータ
+ */
+function updateMemberDataSheetWithIds(spreadsheet, memberDataWithIds) {
+  try {
+    const memberSheet = spreadsheet.getSheetByName(MEMBER_DATA_SHEET_NAME);
+    if (!memberSheet) {
+      Logger.log(`警告: シート「${MEMBER_DATA_SHEET_NAME}」が見つかりません`);
+      return;
+    }
+
+    // 現在のデータ範囲を取得
+    const currentRange = memberSheet.getDataRange();
+    const currentData = currentRange.getValues();
+    
+    // 新しいデータの行数と列数を確認
+    const newRowCount = memberDataWithIds.length;
+    const newColCount = memberDataWithIds[0].length;
+    const currentRowCount = currentData.length;
+    const currentColCount = currentData[0].length;
+    
+    Logger.log(`メンバー情報シート更新: 現在の行数=${currentRowCount}, 列数=${currentColCount}, 新しい行数=${newRowCount}, 列数=${newColCount}`);
+    
+    // 必要に応じてシートのサイズを調整
+    if (newRowCount > currentRowCount) {
+      memberSheet.insertRows(currentRowCount + 1, newRowCount - currentRowCount);
+    }
+    if (newColCount > currentColCount) {
+      memberSheet.insertColumns(currentColCount + 1, newColCount - currentColCount);
+    }
+    
+    // 新しいデータを設定
+    const targetRange = memberSheet.getRange(1, 1, newRowCount, newColCount);
+    targetRange.setValues(memberDataWithIds);
+    
+    Logger.log("メンバー情報シートにmemberIdを書き戻しました");
+  } catch (error) {
+    Logger.log("メンバー情報シート更新エラー:", error.message);
+    console.error("メンバー情報シート更新エラー:", error);
+  }
 }

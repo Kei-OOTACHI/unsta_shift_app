@@ -16,12 +16,37 @@ const REQUIRED_MEMBER_DATA_HEADERS = {
     UPDATE: [COL_HEADER_NAMES.DEPT, COL_HEADER_NAMES.EMAIL, COL_HEADER_NAMES.MEMBER_ID]
   },
   GANTT_SHEETS: {
-    INITIALIZE: [COL_HEADER_NAMES.MEMBER_DATE_ID, COL_HEADER_NAMES.DATE],
-    UPDATE: [COL_HEADER_NAMES.MEMBER_DATE_ID]
+    INITIALIZE: [COL_HEADER_NAMES.MEMBER_DATE_ID, COL_HEADER_NAMES.DATE, COL_HEADER_NAMES.MEMBER_ID],
+    UPDATE: [COL_HEADER_NAMES.MEMBER_DATE_ID, COL_HEADER_NAMES.MEMBER_ID]
   }
 };
 const MEMBER_DATA_SHEET_NAME = "メンバー情報";
 const GANTT_TEMPLATE_SHEET_NAME = "GCテンプレ";
+
+/**
+ * エラーの詳細情報をログに出力するヘルパー関数（共通ライブラリ用）
+ * @param {Error} error - エラーオブジェクト
+ * @param {string} context - エラーが発生したコンテキスト
+ * @param {Object} additionalInfo - 追加のデバッグ情報（オプション）
+ */
+function logLibraryError(error, context, additionalInfo = {}) {
+  console.error(`=== ライブラリエラー詳細 ===`);
+  console.error(`コンテキスト: ${context}`);
+  console.error(`エラーメッセージ: ${error.message}`);
+  console.error(`エラータイプ: ${error.name}`);
+  
+  if (error.stack) {
+    console.error(`スタックトレース:`);
+    console.error(error.stack);
+  }
+  
+  if (Object.keys(additionalInfo).length > 0) {
+    console.error(`追加情報:`);
+    console.error(JSON.stringify(additionalInfo, null, 2));
+  }
+  
+  console.error(`=== ライブラリエラー詳細終了 ===`);
+}
 
 /**
  * メンバーリストシートからデータとヘッダーを取得する
@@ -32,22 +57,47 @@ const GANTT_TEMPLATE_SHEET_NAME = "GCテンプレ";
  * @property {Array} headers - ヘッダー行の配列
  */
 function getMemberDataAndHeaders(spreadsheet, requiredHeaders) {
-  const memberSheet = spreadsheet.getSheetByName(MEMBER_DATA_SHEET_NAME);
-  if (!memberSheet) {
-    throw new Error(`シート「${MEMBER_DATA_SHEET_NAME}」が見つかりません。`);
-  }
-  
-  const memberDataRange = memberSheet.getDataRange();
-  const memberData = memberDataRange.getValues();
-  const memberHeaders = memberData[0];
+  try {
+    console.log('メンバーデータとヘッダーの取得を開始します', {
+      spreadsheetName: spreadsheet ? spreadsheet.getName() : 'unknown',
+      requiredHeaders: requiredHeaders
+    });
+    
+    const memberSheet = spreadsheet.getSheetByName(MEMBER_DATA_SHEET_NAME);
+    if (!memberSheet) {
+      const errorMessage = `シート「${MEMBER_DATA_SHEET_NAME}」が見つかりません。`;
+      console.error(errorMessage);
+      throw new Error(errorMessage);
+    }
+    
+    console.log(`シート「${MEMBER_DATA_SHEET_NAME}」を取得しました`);
+    
+    const memberDataRange = memberSheet.getDataRange();
+    const memberData = memberDataRange.getValues();
+    const memberHeaders = memberData[0];
 
-  // ヘッダー検証を内部で実行
-  validateHeaders(memberHeaders, requiredHeaders);
-  
-  return {
-    data: memberData,
-    headers: memberHeaders
-  };
+    console.log('メンバーデータを取得しました', {
+      dataRows: memberData.length,
+      headers: memberHeaders
+    });
+
+    // ヘッダー検証を内部で実行
+    validateHeaders(memberHeaders, requiredHeaders);
+    
+    console.log('メンバーデータとヘッダーの取得が完了しました');
+    
+    return {
+      data: memberData,
+      headers: memberHeaders
+    };
+  } catch (error) {
+    logLibraryError(error, 'getMemberDataAndHeaders', {
+      spreadsheetName: spreadsheet ? spreadsheet.getName() : 'unknown',
+      requiredHeaders: requiredHeaders,
+      memberDataSheetName: MEMBER_DATA_SHEET_NAME
+    });
+    throw error;
+  }
 }
 
 /**
@@ -62,26 +112,58 @@ function getMemberDataAndHeaders(spreadsheet, requiredHeaders) {
  * @property {number} endCol - 終了列の列番号
  */
 function getGanttHeaders(sheet, headerRangeA1, requiredHeaders) {
-  const headerRangeParts = headerRangeA1.match(/([A-Z]+)([0-9]+):([A-Z]+)([0-9]+)/);
-  if (!headerRangeParts) {
-    throw new Error(`ヘッダー範囲の形式が不正です: ${headerRangeA1}`);
+  const sheetName = sheet ? sheet.getName() : 'unknown';
+  
+  try {
+    console.log(`ガントチャートヘッダーの取得を開始します`, {
+      sheetName: sheetName,
+      headerRangeA1: headerRangeA1,
+      requiredHeaders: requiredHeaders
+    });
+    
+    const headerRangeParts = headerRangeA1.match(/([A-Z]+)([0-9]+):([A-Z]+)([0-9]+)/);
+    if (!headerRangeParts) {
+      const errorMessage = `ヘッダー範囲の形式が不正です: ${headerRangeA1}`;
+      console.error(errorMessage);
+      throw new Error(errorMessage);
+    }
+
+    const headerRow = parseInt(headerRangeParts[2]);
+    const startCol = sheet.getRange(headerRangeParts[1] + "1").getColumn();
+    const endCol = sheet.getRange(headerRangeParts[3] + "1").getColumn();
+    
+    console.log('ヘッダー範囲を解析しました', {
+      headerRow: headerRow,
+      startCol: startCol,
+      endCol: endCol
+    });
+    
+    const headerRange = sheet.getRange(headerRow, startCol, 1, endCol - startCol + 1);
+    const headers = headerRange.getValues()[0];
+
+    console.log('ヘッダーデータを取得しました', {
+      headers: headers
+    });
+
+    // ヘッダー検証を内部で実行
+    validateHeaders(headers, requiredHeaders);
+
+    console.log('ガントチャートヘッダーの取得が完了しました');
+
+    return {
+      headers,
+      headerRow,
+      startCol,
+      endCol
+    };
+  } catch (error) {
+    logLibraryError(error, 'getGanttHeaders', {
+      sheetName: sheetName,
+      headerRangeA1: headerRangeA1,
+      requiredHeaders: requiredHeaders
+    });
+    throw error;
   }
-
-  const headerRow = parseInt(headerRangeParts[2]);
-  const startCol = sheet.getRange(headerRangeParts[1] + "1").getColumn();
-  const endCol = sheet.getRange(headerRangeParts[3] + "1").getColumn();
-  const headerRange = sheet.getRange(headerRow, startCol, 1, endCol - startCol + 1);
-  const headers = headerRange.getValues()[0];
-
-  // ヘッダー検証を内部で実行
-  validateHeaders(headers, requiredHeaders);
-
-  return {
-    headers,
-    headerRow,
-    startCol,
-    endCol
-  };
 }
 
 /**
@@ -91,14 +173,33 @@ function getGanttHeaders(sheet, headerRangeA1, requiredHeaders) {
  * @returns {boolean} すべての必須ヘッダーが存在する場合はtrue
  */
 function validateHeaders(headers, requiredHeaders) {
-  const missingHeaders = requiredHeaders.filter(required => !headers.includes(required));
-  
-  if (missingHeaders.length > 0) {
-    throw new Error(`必須ヘッダーが見つかりません: ${missingHeaders.join(', ')}
-    ${GANTT_TEMPLATE_SHEET_NAME}のヘッダー行に${requiredHeaders.join(', ')}を追加してください。`);
+  try {
+    console.log('ヘッダー検証を開始します', {
+      headers: headers,
+      requiredHeaders: requiredHeaders
+    });
+    
+    const missingHeaders = requiredHeaders.filter(required => !headers.includes(required));
+    
+    if (missingHeaders.length > 0) {
+      const errorMessage = `必須ヘッダーが見つかりません: ${missingHeaders.join(', ')}
+    ガントチャートのヘッダー行に${missingHeaders.join(', ')}を追加してください。`;
+      console.error(errorMessage, {
+        missingHeaders: missingHeaders,
+        availableHeaders: headers
+      });
+      throw new Error(errorMessage);
+    }
+    
+    console.log('ヘッダー検証が完了しました - すべての必須ヘッダーが存在します');
+    return true;
+  } catch (error) {
+    logLibraryError(error, 'validateHeaders', {
+      headers: headers,
+      requiredHeaders: requiredHeaders
+    });
+    throw error;
   }
-  
-  return true;
 }
 
 /**
@@ -150,7 +251,37 @@ function generateMemberDateId(memberId, date) {
  * @returns {string} メンバーID
  */
 function extractMemberId(memberDateId) {
-  return memberDateId.split('_')[0];
+  try {
+    if (!memberDateId || typeof memberDateId !== 'string') {
+      const errorMessage = 'memberDateIdが無効です';
+      console.error(errorMessage, { memberDateId: memberDateId });
+      throw new Error(errorMessage);
+    }
+    
+    const parts = memberDateId.split('_');
+    if (parts.length < 2) {
+      console.warn('memberDateIdの形式が期待と異なります', {
+        memberDateId: memberDateId,
+        expectedFormat: 'memberId_date'
+      });
+    }
+    
+    const memberId = parts[0];
+    
+    if (!memberId) {
+      const errorMessage = 'memberDateIdからメンバーIDを抽出できませんでした';
+      console.error(errorMessage, { memberDateId: memberDateId });
+      throw new Error(errorMessage);
+    }
+    
+    return memberId;
+  } catch (error) {
+    logLibraryError(error, 'extractMemberId', {
+      memberDateId: memberDateId,
+      memberDateIdType: typeof memberDateId
+    });
+    throw error;
+  }
 }
 
 /**
@@ -208,25 +339,73 @@ function generateMemberIds(memberData) {
  * @returns {Object} メンバーIDをキーとしたデータのマップ
  */
 function createMemberDataMap(memberData) {
-  const headers = memberData[0];
-  const memberIdIndex = headers.indexOf(COL_HEADER_NAMES.MEMBER_ID);
-  
-  // メンバーIDをキーにしたオブジェクトを作成
-  // ここではforループの代わりにreduceを使用して、よりシンプルに実装
-  return memberData
-    .slice(1) // ヘッダー行を除外
-    .reduce((dataMap, row) => {
-      const memberId = row[memberIdIndex];
-      if (memberId) {
-        dataMap[memberId] = {};
-        
-        // 各ヘッダーに対応する値をマップに設定
-        headers.forEach((header, j) => {
-          dataMap[memberId][header] = row[j];
-        });
-      }
-      return dataMap;
-    }, {});
+  try {
+    console.log('メンバーデータマップの作成を開始します', {
+      memberDataLength: memberData ? memberData.length : 'undefined'
+    });
+    
+    if (!memberData || memberData.length === 0) {
+      const errorMessage = 'メンバーデータが空です';
+      console.error(errorMessage);
+      throw new Error(errorMessage);
+    }
+    
+    const headers = memberData[0];
+    const memberIdIndex = headers.indexOf(COL_HEADER_NAMES.MEMBER_ID);
+    
+    if (memberIdIndex === -1) {
+      const errorMessage = `必須ヘッダー「${COL_HEADER_NAMES.MEMBER_ID}」が見つかりません`;
+      console.error(errorMessage, {
+        availableHeaders: headers
+      });
+      throw new Error(errorMessage);
+    }
+    
+    console.log('メンバーIDインデックスを取得しました', {
+      memberIdIndex: memberIdIndex,
+      headers: headers
+    });
+    
+    // メンバーIDをキーにしたオブジェクトを作成
+    // ここではforループの代わりにreduceを使用して、よりシンプルに実装
+    const dataMap = memberData
+      .slice(1) // ヘッダー行を除外
+      .reduce((dataMap, row, index) => {
+        try {
+          const memberId = row[memberIdIndex];
+          if (memberId) {
+            dataMap[memberId] = {};
+            
+            // 各ヘッダーに対応する値をマップに設定
+            headers.forEach((header, j) => {
+              dataMap[memberId][header] = row[j];
+            });
+          }
+          return dataMap;
+        } catch (rowError) {
+          logLibraryError(rowError, `メンバーデータマップ作成 - 行${index + 2}の処理`, {
+            rowIndex: index + 2,
+            rowData: row,
+            memberId: row[memberIdIndex]
+          });
+          // エラーが発生した行はスキップして続行
+          return dataMap;
+        }
+      }, {});
+    
+    console.log('メンバーデータマップの作成が完了しました', {
+      memberCount: Object.keys(dataMap).length,
+      memberIds: Object.keys(dataMap)
+    });
+    
+    return dataMap;
+  } catch (error) {
+    logLibraryError(error, 'createMemberDataMap', {
+      memberDataLength: memberData ? memberData.length : 'undefined',
+      memberDataHeaders: memberData && memberData.length > 0 ? memberData[0] : 'undefined'
+    });
+    throw error;
+  }
 }
 
 /**
@@ -239,16 +418,75 @@ function createMemberDataMap(memberData) {
  * @returns {Array} 更新されたガントチャート行データ
  */
 function copyMemberDataToGanttRow(commonHeaders, headerIndices, ganttRow, memberData, excludeHeaders = []) {
-  commonHeaders.forEach((header) => {
-    // 除外ヘッダーリストをチェック
-    if (!excludeHeaders.includes(header)) {
-      const ganttIndex = headerIndices.gantt[header];
-      
-      if (ganttIndex !== undefined && memberData[header] !== undefined) {
-        ganttRow[ganttIndex] = memberData[header];
-      }
+  try {
+    console.log('メンバーデータのコピーを開始します', {
+      commonHeaders: commonHeaders,
+      excludeHeaders: excludeHeaders,
+      memberDataKeys: Object.keys(memberData || {})
+    });
+    
+    if (!commonHeaders || !Array.isArray(commonHeaders)) {
+      const errorMessage = 'commonHeadersが無効です';
+      console.error(errorMessage, { commonHeaders: commonHeaders });
+      throw new Error(errorMessage);
     }
-  });
-  
-  return ganttRow;
+    
+    if (!headerIndices || !headerIndices.gantt) {
+      const errorMessage = 'headerIndicesが無効です';
+      console.error(errorMessage, { headerIndices: headerIndices });
+      throw new Error(errorMessage);
+    }
+    
+    if (!ganttRow || !Array.isArray(ganttRow)) {
+      const errorMessage = 'ganttRowが無効です';
+      console.error(errorMessage, { ganttRow: ganttRow });
+      throw new Error(errorMessage);
+    }
+    
+    if (!memberData || typeof memberData !== 'object') {
+      const errorMessage = 'memberDataが無効です';
+      console.error(errorMessage, { memberData: memberData });
+      throw new Error(errorMessage);
+    }
+    
+    let copiedCount = 0;
+    
+    commonHeaders.forEach((header, index) => {
+      try {
+        // 除外ヘッダーリストをチェック
+        if (!excludeHeaders.includes(header)) {
+          const ganttIndex = headerIndices.gantt[header];
+          
+          if (ganttIndex !== undefined && memberData[header] !== undefined) {
+            ganttRow[ganttIndex] = memberData[header];
+            copiedCount++;
+          }
+        }
+      } catch (headerError) {
+        logLibraryError(headerError, `メンバーデータコピー - ヘッダー「${header}」の処理`, {
+          header: header,
+          headerIndex: index,
+          ganttIndex: headerIndices.gantt[header],
+          memberValue: memberData[header]
+        });
+        // エラーが発生したヘッダーはスキップして続行
+      }
+    });
+    
+    console.log('メンバーデータのコピーが完了しました', {
+      copiedCount: copiedCount,
+      totalHeaders: commonHeaders.length
+    });
+    
+    return ganttRow;
+  } catch (error) {
+    logLibraryError(error, 'copyMemberDataToGanttRow', {
+      commonHeaders: commonHeaders,
+      excludeHeaders: excludeHeaders,
+      ganttRowLength: ganttRow ? ganttRow.length : 'undefined',
+      memberDataKeys: memberData ? Object.keys(memberData) : 'undefined',
+      headerIndicesKeys: headerIndices ? Object.keys(headerIndices) : 'undefined'
+    });
+    throw error;
+  }
 } 
