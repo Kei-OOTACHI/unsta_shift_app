@@ -21,7 +21,7 @@ function buildGanttMenu(ui) {
 }
 
 /**
- * メインの処理を実行する関数
+ * ユーザーにガントチャート作成のパラメータを入力させるダイアログを表示する関数
  */
 function promptUserForGanttChartInfo() {
   // ガントチャートテンプレートの範囲選択

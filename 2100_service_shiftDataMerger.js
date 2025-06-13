@@ -1,15 +1,21 @@
 // 列・行インデックスの直接参照が可能です:
 // RDB_COL_INDEXES.dept, GANTT_COL_INDEXES.firstData, GANTT_ROW_INDEXES.timeScale等
 
-const SS_URLS = { GANTT_CHART: "", DATABASE: "", LOG: "" };
-const SHEET_NAMES = { RDB: "データベース", CONFLICT_RDB: "コンフリクトデータ" };
+const SHEET_NAMES = { IN_RDB: "Input", OUT_RDB: "シフトDB", CONFLICT_RDB: "重複データ" };
 
 function main() {
-  const InRdbSheet = SpreadsheetApp.openByUrl(SS_URLS.DATABASE).getSheetByName(SHEET_NAMES.RDB);
-  const InGanttSs = SpreadsheetApp.openByUrl(SS_URLS.GANTT_CHART);
-  const OutMergedRdbSheet = SpreadsheetApp.openByUrl(SS_URLS.DATABASE).getSheetByName(SHEET_NAMES.RDB);
-  const OutGanttSs = SpreadsheetApp.openByUrl(SS_URLS.GANTT_CHART);
-  const OutConflictRdbSheet = SpreadsheetApp.openByUrl(SS_URLS.DATABASE).getSheetByName(SHEET_NAMES.CONFLICT_RDB);
+  // 名前付き範囲の設定確認
+  validateAllNamedRanges();
+  
+  // 名前付き範囲からインデックスを初期化
+  initializeColumnIndexes();
+  
+  const ganttSsUrl = PropertiesService.getScriptProperties().getProperty("GANTT_SS");
+  const InRdbSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.IN_RDB);
+  const InGanttSs = SpreadsheetApp.openByUrl(ganttSsUrl);
+  const OutMergedRdbSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.OUT_RDB);
+  const OutGanttSs = SpreadsheetApp.openByUrl(ganttSsUrl);
+  const OutConflictRdbSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.CONFLICT_RDB);
 
   integrateShiftData(
     InRdbSheet,
