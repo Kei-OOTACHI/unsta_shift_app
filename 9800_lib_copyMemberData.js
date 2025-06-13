@@ -22,6 +22,7 @@ const REQUIRED_MEMBER_DATA_HEADERS = {
 };
 const MEMBER_DATA_SHEET_NAME = "メンバー情報";
 const GANTT_TEMPLATE_SHEET_NAME = "GCテンプレ";
+const INPUT_SHEET_NAME = "Input";
 
 /**
  * エラーの詳細情報をログに出力するヘルパー関数（共通ライブラリ用）

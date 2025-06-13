@@ -1,19 +1,10 @@
+// 列・行インデックスの直接参照が可能です:
+// RDB_COL_INDEXES.dept, GANTT_COL_INDEXES.firstData, GANTT_ROW_INDEXES.timeScale等
+
 const SS_URLS = { GANTT_CHART: "", DATABASE: "", LOG: "" };
 const SHEET_NAMES = { RDB: "データベース", CONFLICT_RDB: "コンフリクトデータ" };
-const DEPARTMENTS = {
-  A: "会場整備局",
-  B: "参加対応局",
-  C: "開発局",
-  D: "企画局",
-  E: "広報制作局",
-  F: "渉外局",
-  G: "総務局",
-  H: "財務局",
-};
 
 function main() {
-  const { rdbColManager, ganttColManager, ganttRowManager, conflictColManager } = convertToNewFormat();
-
   const InRdbSheet = SpreadsheetApp.openByUrl(SS_URLS.DATABASE).getSheetByName(SHEET_NAMES.RDB);
   const InGanttSs = SpreadsheetApp.openByUrl(SS_URLS.GANTT_CHART);
   const OutMergedRdbSheet = SpreadsheetApp.openByUrl(SS_URLS.DATABASE).getSheetByName(SHEET_NAMES.RDB);
@@ -25,11 +16,7 @@ function main() {
     InGanttSs,
     OutMergedRdbSheet,
     OutGanttSs,
-    OutConflictRdbSheet,
-    rdbColManager,
-    ganttColManager,
-    ganttRowManager,
-    conflictColManager
+    OutConflictRdbSheet
   );
 }
 
@@ -38,14 +25,10 @@ function integrateShiftData(
   InGanttSs,
   OutMergedRdbSheet,
   OutGanttSs,
-  OutConflictRdbSheet,
-  rdbColManager,
-  ganttColManager,
-  ganttRowManager,
-  conflictColManager
+  OutConflictRdbSheet
 ) {
   const ganttDataGrpedByDept = getAllGanttSeetDataAndGrpBySheetName(InGanttSs);
-  const rdbDataGrpedByDept = groupeByMemIdInitial(getRdbData(InRdbSheet), rdbColManager.getColumnIndex("memberDateId"));
+  const rdbDataGrpedByDept = groupByDept(getRdbData(InRdbSheet), RDB_COL_INDEXES.dept);
 
   let newGanttValues = {};
   let newGanttBgs = {};
@@ -57,11 +40,7 @@ function integrateShiftData(
     return processDepartment(
       deptKey,
       rdbData,
-      ganttDataGrpedByDept,
-      rdbColManager,
-      ganttColManager,
-      ganttRowManager,
-      conflictColManager
+      ganttDataGrpedByDept
     );
   });
 
@@ -87,25 +66,17 @@ function integrateShiftData(
     newGanttValues,
     newGanttBgs,
     newRdbData,
-    conflictData,
-    rdbColManager,
-    ganttColManager,
-    ganttRowManager,
-    conflictColManager
+    conflictData
   );
 }
 
 function processDepartment(
   deptKey,
   rdbData,
-  ganttDataGrpedByDept,
-  rdbColManager,
-  ganttColManager,
-  ganttRowManager,
-  conflictColManager
+  ganttDataGrpedByDept
 ) {
   try {
-    const dept = DEPARTMENTS[deptKey];
+    const dept = deptKey; // deptKeyは既に部署名になっている
     const { values: ganttValues, backgrounds: ganttBgs } = ganttDataGrpedByDept[dept];
 
     // ガントチャートのヘッダーとシフトデータを分割
@@ -116,9 +87,9 @@ function processDepartment(
       ganttShiftBgs,
       timeHeaders,
       memberDateIdHeaders,
-      originalColOrder,
-      originalRowOrder,
-    } = splitGanttData(ganttValues, ganttBgs, ganttColManager, ganttRowManager);
+      firstDataColOffset,
+      firstDataRowOffset,
+    } = splitGanttData(ganttValues, ganttBgs);
 
     const { validShiftsMap, conflictShiftObjs } = convert2dAryToObjsAndJoin(
       ganttShiftValues,
@@ -126,7 +97,7 @@ function processDepartment(
       timeHeaders,
       memberDateIdHeaders,
       rdbData,
-      rdbColManager
+      dept
     );
  
     const {
@@ -137,10 +108,7 @@ function processDepartment(
     } = convertObjsTo2dAry(
       validShiftsMap,
       conflictShiftObjs,
-      timeHeaders,
-      rdbColManager,
-      ganttColManager,
-      conflictColManager
+      timeHeaders
     );
 
     // ガントチャートのヘッダーとシフトデータを結合
@@ -149,10 +117,8 @@ function processDepartment(
       deptGanttValues,
       ganttHeaderBgs,
       deptGanttBgs,
-      ganttColManager,
-      ganttRowManager,
-      originalColOrder,
-      originalRowOrder
+      firstDataColOffset,
+      firstDataRowOffset
     );
 
     return {
@@ -167,7 +133,7 @@ function processDepartment(
     console.error(`Error processing department ${deptKey}:`, error);
     return {
       success: false,
-      dept: DEPARTMENTS[deptKey],
+      dept: deptKey,
       error: error.toString(),
     };
   }
@@ -180,11 +146,7 @@ function setDataToSheets(
   ganttValues,
   ganttBgs,
   rdbData,
-  conflictData,
-  rdbColManager,
-  ganttColManager,
-  ganttRowManager,
-  conflictColManager
+  conflictData
 ) {
   try {
     // 現在のデータをバックアップ
@@ -208,9 +170,9 @@ function setDataToSheets(
     // データベースとコンフリクトシートのクリアと更新
     OutMergedRdbSheet.clear();
     OutConflictRdbSheet.clear();
-    rdbData.unshift(rdbColManager.config.order);
+    rdbData.unshift(getColumnOrder(RDB_COL_INDEXES));
     OutMergedRdbSheet.getRange(1, 1, rdbData.length, rdbData[0].length).setValues(rdbData);
-    conflictData.unshift(conflictColManager.config.order);
+    conflictData.unshift(getColumnOrder(CONFLICT_COL_INDEXES));
     OutConflictRdbSheet.getRange(1, 1, conflictData.length, conflictData[0].length).setValues(conflictData);
 
     // ガントチャートの各シートを処理

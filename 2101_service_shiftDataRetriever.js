@@ -1,4 +1,3 @@
-
 /** 指定したスプレッドシート内のすべてのシートから、ガントデータと背景データを取得、シート名ごとに分類
  *
  * @param {Spreadsheet} ganttSs - ガントチャートのデータが含まれる Google スプレッドシートオブジェクト
@@ -51,16 +50,17 @@ function getAllGanttSeetDataAndGrpBySheetName(ganttSs) {
     return { values, backgrounds };
   }
   
-  /** 2次元配列を指定した列の先頭一文字で分類
+  /** 2次元配列を指定した列の値で分類
    *
-   * @param {Array} data - 2次元配列
-   * @param {number} colIndex - 分類に使用する列のインデックス（0始まり）各セルの値は先頭一文字に局固有のアルファベット、その後ろに数字が続く
-   * @return {Object} 先頭一文字をキーとしたオブジェクト。各キーに該当する行の配列が格納される。
+   * @param {Array} data - 2次元配列（1行目はヘッダー）
+   * @param {number} colIndex - 分類に使用する列のインデックス（0始まり）各セルの値は部署名
+   * @return {Object} 部署名をキーとしたオブジェクト。各キーに該当する行の配列が格納される。
    */
-  function groupeByMemIdInitial(data, colIndex) {
-    return data.reduce((acc, row) => {
+  function groupByDept(data, colIndex) {
+    // ヘッダー行をスキップして処理
+    return data.slice(1).reduce((acc, row) => {
       if (row.length > colIndex) {
-        const key = String(row[colIndex]).charAt(0);
+        const key = String(row[colIndex]);
         // 既にキーが存在していればその配列に追加、存在しなければ新たな配列を作成
         acc[key] = acc[key] ? [...acc[key], row] : [row];
       }
@@ -70,7 +70,7 @@ function getAllGanttSeetDataAndGrpBySheetName(ganttSs) {
 
 // SSの指定したシートのデータを２次元配列として抽出
 function getRdbData(rdbSheet) {
-    const rdbData = rdbSheet.getRange(2, 1, rdbSheet.getLastRow() - 1, rdbSheet.getLastColumn());
+    const rdbData = rdbSheet.getRange(1, 1, rdbSheet.getLastRow(), rdbSheet.getLastColumn()).getValues();
   
     // 空の行を除外
     const filterEmptyRows = (data) => data.filter((row) => row.some((cell) => cell !== ""));

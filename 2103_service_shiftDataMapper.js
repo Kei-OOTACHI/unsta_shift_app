@@ -1,10 +1,10 @@
 
-function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateIdHeaders, rdbData, columnManager) {
+function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateIdHeaders, rdbData, deptName) {
     // memberIdをキーとする時間枠データのマップを作成（ガントチャートのデータ）
-    const shiftsFromGanttMap = gantt2dAryToMap(ganttValue, ganttBg, timeHeaders, memberDateIdHeaders);
+    const shiftsFromGanttMap = gantt2dAryToMap(ganttValue, ganttBg, timeHeaders, memberDateIdHeaders, deptName);
   
     // RDBからのデータもmemberIdをキー、時間枠をマップとして変換
-    const shiftsFromRdbMap = rdb2dAryToMap(rdbData, columnManager, timeHeaders);
+    const shiftsFromRdbMap = rdb2dAryToMap(rdbData, timeHeaders);
   
     // 重複検出と解決
     const { validShiftsMap, conflictShiftObjs } = detectConflictsWithMap(
@@ -18,7 +18,7 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
   }
   
   // ガントチャートデータをmemberIdをキーとするマップに変換
-  function gantt2dAryToMap(ganttValue, ganttBg, timeHeaders, memberDateIdHeaders) {
+  function gantt2dAryToMap(ganttValue, ganttBg, timeHeaders, memberDateIdHeaders, deptName) {
     // memberIdをキーとし、時間ごとのシフト情報を格納するマップ
     const shiftsMap = new Map();
   
@@ -58,6 +58,7 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
           // シフト全体の情報を作成
           const shiftInfo = {
             job: cellValue,
+            dept: deptName,
             background: cellBg,
             source: "Gantt",
             memberDateId: memberId,
@@ -82,20 +83,22 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
   }
   
   // RDBデータをmemberIdをキーとするマップに変換
-  function rdb2dAryToMap(rdbData, columnManager, timeHeaders) {
+  function rdb2dAryToMap(rdbData, timeHeaders) {
     const shiftsMap = new Map();
     
-    // 列インデックスを一度だけ取得
-    const memberDateIdIndex = columnManager.getColumnIndex("memberDateId");
-    const jobIndex = columnManager.getColumnIndex("job");
-    const startTimeIndex = columnManager.getColumnIndex("startTime");
-    const endTimeIndex = columnManager.getColumnIndex("endTime");
-    const backgroundIndex = columnManager.getColumnIndex("background");
+    // 列インデックスを直接参照
+    const memberDateIdIndex = RDB_COL_INDEXES.memberDateId;
+    const deptIndex = RDB_COL_INDEXES.dept;
+    const jobIndex = RDB_COL_INDEXES.job;
+    const startTimeIndex = RDB_COL_INDEXES.startTime;
+    const endTimeIndex = RDB_COL_INDEXES.endTime;
+    const backgroundIndex = RDB_COL_INDEXES.background;
     
     // ヘッダー行をスキップ
     for (let i = 1; i < rdbData.length; i++) {
       const row = rdbData[i];
       const memberId = row[memberDateIdIndex];
+      const dept = row[deptIndex];
       const job = row[jobIndex];
       const startTime = new Date(row[startTimeIndex]);
       const endTime = new Date(row[endTimeIndex]);
@@ -113,6 +116,7 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
       // シフト全体の情報を作成
       const shiftInfo = {
         job,
+        dept,
         background,
         source: "RDB",
         memberDateId: memberId,

@@ -1,52 +1,34 @@
+function splitGanttData(ganttValues, ganttBgs) {
+    const firstDataCol = GANTT_COL_INDEXES.firstData;
+    const firstDataRow = GANTT_ROW_INDEXES.firstData;
 
-function splitGanttData(ganttValues, ganttBgs, ganttColManager, ganttRowManager) {
-    const firstDataCol = ganttColManager.getColumnIndex("firstData");
-    const firstDataRow = ganttRowManager.getColumnIndex("firstData");
-  
     // シフトデータ部分
     const ganttShiftValues = ganttValues.slice(firstDataRow).map((row) => row.slice(firstDataCol));
     const ganttShiftBgs = ganttBgs.slice(firstDataRow).map((row) => row.slice(firstDataCol));
-  
+
     // ヘッダー部分（「の形）
     const ganttHeaderValues = [];
     const ganttHeaderBgs = [];
-  
+
     // 上部ヘッダー行（全列を含む）
     for (let i = 0; i < firstDataRow; i++) {
       ganttHeaderValues.push([...ganttValues[i]]);
       ganttHeaderBgs.push([...ganttBgs[i]]);
     }
-  
+
     // 左側ヘッダー列（firstDataRow行目以降、firstDataCol列までのデータ）
     for (let i = firstDataRow; i < ganttValues.length; i++) {
       ganttHeaderValues.push(ganttValues[i].slice(0, firstDataCol));
       ganttHeaderBgs.push(ganttBgs[i].slice(0, firstDataCol));
     }
+
+    // 削除前にtimeScaleとmemberDateIdの元のインデックスを取得
+    const originalTimeRow = GANTT_ROW_INDEXES.timeScale;
+    const originalMemberDateIdCol = GANTT_COL_INDEXES.memberDateId;
   
-    // ganttColManagerのorderを修正（firstDataより前の要素を削除）
-    const originalColOrder = [...ganttColManager.config.order];
-    const firstDataColIndex = ganttColManager.config.order.indexOf("firstData");
-    const adjustedColOrder = ganttColManager.config.order.slice(firstDataColIndex);
-  
-    // ganttRowManagerのorderを修正（firstDataより前の要素を削除）
-    const originalRowOrder = [...ganttRowManager.config.order];
-    const firstDataRowIndex = ganttRowManager.config.order.indexOf("firstData");
-    const adjustedRowOrder = ganttRowManager.config.order.slice(firstDataRowIndex);
-  
-    // 修正したorderで設定を更新
-    ganttColManager.config.order = adjustedColOrder;
-    ganttRowManager.config.order = adjustedRowOrder;
-  
-    // インデックスを再初期化
-    ganttColManager.initializeIndexes();
-    ganttRowManager.initializeIndexes();
-  
-    // timescale,memberDateIdのリストを作成
-    const timeRow = ganttRowManager.getColumnIndex("timeScale");
-    const memberDateIdCol = ganttColManager.getColumnIndex("memberDateId");
-  
-    const timeHeaders = ganttValues[timeRow].slice(firstDataCol);
-    const memberDateIdHeaders = ganttValues.slice(firstDataRow).map((row) => row[memberDateIdCol]);
+    // timescale,memberDateIdのリストを作成（元のインデックスを使用）
+    const timeHeaders = ganttValues[originalTimeRow].slice(firstDataCol);
+    const memberDateIdHeaders = ganttValues.slice(firstDataRow).map((row) => row[originalMemberDateIdCol]);
   
     return {
       ganttHeaderValues,
@@ -55,22 +37,20 @@ function splitGanttData(ganttValues, ganttBgs, ganttColManager, ganttRowManager)
       ganttShiftBgs,
       timeHeaders,
       memberDateIdHeaders,
-      originalColOrder,
-      originalRowOrder,
+      // オフセット計算用の情報を追加
+      firstDataColOffset: firstDataCol,
+      firstDataRowOffset: firstDataRow,
     };
   }
   
   function convertObjsTo2dAry(
     validShiftsMap,
     conflictShiftObjs,
-    timeHeaders,
-    rdbColManager,
-    ganttColManager,
-    conflictColManager
+    timeHeaders
   ) {
     // rdbDataとconflictDataのヘッダー行を追加
-    const rdbData = [rdbColManager.config.order.slice()];
-    const conflictData = [conflictColManager.config.order.slice()];
+    const rdbData = [getColumnOrder(RDB_COL_INDEXES)];
+    const conflictData = [getColumnOrder(CONFLICT_COL_INDEXES)];
     
     // Mapからrdbデータを直接生成（中間変換なし）
     const processedShiftIds = new Set();
@@ -84,10 +64,10 @@ function splitGanttData(ganttValues, ganttBgs, ganttColManager, ganttRowManager)
     for (const [memberId, timeMap] of validShiftsMap.entries()) {
       // 各時間スロットごとに処理
       for (const [timeKey, shiftInfo] of timeMap.entries()) {
-        // まだ処理していないシフトIDの場合のみrdbDataに追加
-        if (!processedShiftIds.has(shiftInfo.shiftId)) {
-          const rdbRow = rdbColManager.config.order.map(key => shiftInfo[key]);
-          rdbData.push(rdbRow);
+                  // まだ処理していないシフトIDの場合のみrdbDataに追加
+          if (!processedShiftIds.has(shiftInfo.shiftId)) {
+            const rdbRow = getColumnOrder(RDB_COL_INDEXES).map(key => shiftInfo[key]);
+            rdbData.push(rdbRow);
           processedShiftIds.add(shiftInfo.shiftId);
           
           // ganttData用のデータも準備
@@ -119,7 +99,7 @@ function splitGanttData(ganttValues, ganttBgs, ganttColManager, ganttRowManager)
   
     // コンフリクトデータを処理
     conflictShiftObjs.forEach((shiftObj) => {
-      const conflictRow = conflictColManager.config.order.map((key) => shiftObj[key]);
+      const conflictRow = getColumnOrder(CONFLICT_COL_INDEXES).map((key) => shiftObj[key]);
       conflictData.push(conflictRow);
     });
   
@@ -148,13 +128,12 @@ function splitGanttData(ganttValues, ganttBgs, ganttColManager, ganttRowManager)
     ganttShiftValues,
     ganttHeaderBgs,
     ganttShiftBgs,
-    ganttColManager,
-    ganttRowManager,
-    originalColOrder,
-    originalRowOrder
+    firstDataColOffset,
+    firstDataRowOffset
   ) {
-    const firstDataCol = ganttColManager.getColumnIndex("firstData");
-    const firstDataRow = ganttRowManager.getColumnIndex("firstData");
+    // オフセットを使用してfirstDataの位置を計算
+    const firstDataCol = firstDataColOffset;
+    const firstDataRow = firstDataRowOffset;
   
     // 結合後のデータを格納する配列
     const mergedValues = [];
@@ -174,14 +153,6 @@ function splitGanttData(ganttValues, ganttBgs, ganttColManager, ganttRowManager)
       mergedValues.push([...headerRow, ...ganttShiftValues[i]]);
       mergedBgs.push([...bgHeaderRow, ...ganttShiftBgs[i]]);
     }
-  
-    // managerのorderを元に戻す
-    ganttColManager.config.order = originalColOrder;
-    ganttRowManager.config.order = originalRowOrder;
-  
-    // インデックスを再初期化
-    ganttColManager.initializeIndexes();
-    ganttRowManager.initializeIndexes();
   
     return {
       values: mergedValues,
