@@ -1,12 +1,11 @@
 // 列・行インデックス定数オブジェクト
 let RDB_COL_INDEXES = {
-  job: "",
-  memberDateId: "",
   dept: "",
+  memberDateId: "",
   startTime: "",
   endTime: "",
+  job: "",
   background: "",
-  source: "",
 };
 
 let GANTT_COL_INDEXES = {
@@ -20,11 +19,11 @@ let GANTT_ROW_INDEXES = {
 };
 
 let CONFLICT_COL_INDEXES = {
-  job: "",
-  memberDateId: "",
   dept: "",
+  memberDateId: "",
   startTime: "",
   endTime: "",
+  job: "",
   background: "",
   source: "",
 };
@@ -133,7 +132,14 @@ function initializeColumnIndexes() {
     
     // CONFLICT_COL_INDEXESの設定（RDB_COL_INDEXESと同じ値を使用）
     Object.keys(CONFLICT_COL_INDEXES).forEach(key => {
-      if (RDB_COL_INDEXES.hasOwnProperty(key)) {
+      // sourceプロパティの場合は、未設定なら最後の列として追加
+      const isSourceKey = key === 'source';
+      const isKeyMissing = !RDB_COL_INDEXES.hasOwnProperty(key) || RDB_COL_INDEXES[key] === '';
+      
+      if (isSourceKey && isKeyMissing) {
+        const maxIndex = Math.max(...Object.values(RDB_COL_INDEXES));
+        CONFLICT_COL_INDEXES[key] = maxIndex + 1;
+      } else if (RDB_COL_INDEXES.hasOwnProperty(key)) {
         CONFLICT_COL_INDEXES[key] = RDB_COL_INDEXES[key];
       }
     });

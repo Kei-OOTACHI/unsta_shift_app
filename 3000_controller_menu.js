@@ -11,6 +11,7 @@ function onOpen() {
     buildFmMenu(ui),
     buildGanttMenu(ui),
     buildMemberMenu(ui),
+    buildShiftDataMergerMenu(ui),
     buildCommonMenu(ui)
   ];
   

@@ -1,7 +1,12 @@
 // 列・行インデックスの直接参照が可能です:
 // RDB_COL_INDEXES.dept, GANTT_COL_INDEXES.firstData, GANTT_ROW_INDEXES.timeScale等
 
-const SHEET_NAMES = { IN_RDB: "Input", OUT_RDB: "シフトDB", CONFLICT_RDB: "重複データ" };
+const SHEET_NAMES = { IN_RDB: "Input", OUT_RDB: "シフトDB", CONFLICT_RDB: "重複データ",ERROR_RDB: "エラーデータ" };
+
+function buildShiftDataMergerMenu(ui) {
+  return ui.createMenu("シフトデータ統合")
+    .addItem("シフトデータを統合", "main");
+}
 
 function main() {
   // 名前付き範囲の設定確認
@@ -11,18 +16,20 @@ function main() {
   initializeColumnIndexes();
   
   const ganttSsUrl = PropertiesService.getScriptProperties().getProperty("GANTT_SS");
-  const InRdbSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.IN_RDB);
   const InGanttSs = SpreadsheetApp.openByUrl(ganttSsUrl);
-  const OutMergedRdbSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.OUT_RDB);
+  const InRdbSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.IN_RDB);
   const OutGanttSs = SpreadsheetApp.openByUrl(ganttSsUrl);
+  const OutMergedRdbSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.OUT_RDB);
   const OutConflictRdbSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.CONFLICT_RDB);
+  const OutErrorRdbSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.ERROR_RDB);
 
   integrateShiftData(
     InRdbSheet,
     InGanttSs,
     OutMergedRdbSheet,
     OutGanttSs,
-    OutConflictRdbSheet
+    OutConflictRdbSheet,
+    OutErrorRdbSheet
   );
 }
 
@@ -31,32 +38,62 @@ function integrateShiftData(
   InGanttSs,
   OutMergedRdbSheet,
   OutGanttSs,
-  OutConflictRdbSheet
+  OutConflictRdbSheet,
+  OutErrorRdbSheet
 ) {
   const ganttDataGrpedByDept = getAllGanttSeetDataAndGrpBySheetName(InGanttSs);
   const rdbDataGrpedByDept = groupByDept(getRdbData(InRdbSheet), RDB_COL_INDEXES.dept);
+
+  // 処理対象の部署（Ganttに存在する部署のみ）
+  const validDepartments = new Set([
+    ...Object.keys(ganttDataGrpedByDept)
+  ]);
 
   let newGanttValues = {};
   let newGanttBgs = {};
   let newRdbData = [];
   let conflictData = [];
+  let errorData = [];
   let failedDepartments = [];
 
-  const results = Object.entries(rdbDataGrpedByDept).map(([deptKey, rdbData]) => {
+  // RDBのみに存在する部署をエラーデータとして収集
+  Object.entries(rdbDataGrpedByDept).forEach(([deptKey, rdbData]) => {
+    if (!validDepartments.has(deptKey)) {
+      // Ganttに存在しない部署のRDBデータはエラーとして扱う
+      errorData = errorData.concat(rdbData);
+    }
+  });
+
+  // 有効な部署（Ganttに存在する部署）のみを処理
+  const results = Array.from(validDepartments).map((deptKey) => {
+    const hasRdbData = rdbDataGrpedByDept.hasOwnProperty(deptKey);
+    
+    let rdbDataForProcessing = [];
+    let ganttDataForProcessing = ganttDataGrpedByDept[deptKey];
+
+    if (hasRdbData) {
+      // 両方にデータがある場合
+      rdbDataForProcessing = rdbDataGrpedByDept[deptKey];
+    } else {
+      // Ganttのみにデータがある場合
+      rdbDataForProcessing = []; // 空のRDBデータ
+    }
+
+    // processDepartment関数を呼び出し
     return processDepartment(
       deptKey,
-      rdbData,
-      ganttDataGrpedByDept
+      rdbDataForProcessing,
+      ganttDataForProcessing
     );
   });
 
   results.forEach((result) => {
-    if (result.success) {
+    if (result && result.success) {
       newGanttValues[result.dept] = result.ganttValues;
       newGanttBgs[result.dept] = result.ganttBgs;
       newRdbData = newRdbData.concat(result.rdbData);
       conflictData = conflictData.concat(result.conflictData);
-    } else {
+    } else if (result && !result.success) {
       failedDepartments.push(result.dept);
     }
   });
@@ -69,21 +106,23 @@ function integrateShiftData(
     OutGanttSs,
     OutMergedRdbSheet,
     OutConflictRdbSheet,
+    OutErrorRdbSheet,
     newGanttValues,
     newGanttBgs,
     newRdbData,
-    conflictData
+    conflictData,
+    errorData
   );
 }
 
 function processDepartment(
   deptKey,
   rdbData,
-  ganttDataGrpedByDept
+  ganttData
 ) {
   try {
     const dept = deptKey; // deptKeyは既に部署名になっている
-    const { values: ganttValues, backgrounds: ganttBgs } = ganttDataGrpedByDept[dept];
+    const { values: ganttValues, backgrounds: ganttBgs } = ganttData;
 
     // ガントチャートのヘッダーとシフトデータを分割
     const {
@@ -145,20 +184,25 @@ function processDepartment(
   }
 }
 
+
+
 function setDataToSheets(
   OutGanttSs,
   OutMergedRdbSheet,
   OutConflictRdbSheet,
+  OutErrorRdbSheet,
   ganttValues,
   ganttBgs,
   rdbData,
-  conflictData
+  conflictData,
+  errorData
 ) {
   try {
     // 現在のデータをバックアップ
     const backup = {
       rdbData: OutMergedRdbSheet.getDataRange().getValues(),
       conflictData: OutConflictRdbSheet.getDataRange().getValues(),
+      errorData: OutErrorRdbSheet.getDataRange().getValues(),
       ganttSheets: {}
     };
 
@@ -173,16 +217,31 @@ function setDataToSheets(
       }
     });
 
-    // データベースとコンフリクトシートのクリアと更新
+    // データベース、コンフリクト、エラーシートのクリアと更新
     OutMergedRdbSheet.clear();
     OutConflictRdbSheet.clear();
+    OutErrorRdbSheet.clear();
+    
     rdbData.unshift(getColumnOrder(RDB_COL_INDEXES));
     OutMergedRdbSheet.getRange(1, 1, rdbData.length, rdbData[0].length).setValues(rdbData);
+    
     conflictData.unshift(getColumnOrder(CONFLICT_COL_INDEXES));
     OutConflictRdbSheet.getRange(1, 1, conflictData.length, conflictData[0].length).setValues(conflictData);
+    
+    // エラーデータの書き込み（Ganttに存在しない部署のRDBデータ）
+    if (errorData.length > 0) {
+      errorData.unshift(getColumnOrder(RDB_COL_INDEXES));
+      OutErrorRdbSheet.getRange(1, 1, errorData.length, errorData[0].length).setValues(errorData);
+    }
 
     // ガントチャートの各シートを処理
     Object.entries(ganttValues).forEach(([sheetName, sheetValues]) => {
+      // 空のガントデータの場合はスキップ
+      if (!sheetValues || sheetValues.length === 0 || 
+          (sheetValues.length === 1 && sheetValues[0].length === 0)) {
+        return;
+      }
+      
       const targetSheet = OutGanttSs.getSheetByName(sheetName)?.clear() || OutGanttSs.insertSheet(sheetName);
       const sheetBgs = ganttBgs[sheetName];
 
@@ -197,11 +256,13 @@ function setDataToSheets(
     
     // エラーが発生した場合、バックアップから復元
     try {
-      // データベースとコンフリクトシートの復元
+      // データベース、コンフリクト、エラーシートの復元
       OutMergedRdbSheet.clear();
       OutConflictRdbSheet.clear();
+      OutErrorRdbSheet.clear();
       OutMergedRdbSheet.getRange(1, 1, backup.rdbData.length, backup.rdbData[0].length).setValues(backup.rdbData);
       OutConflictRdbSheet.getRange(1, 1, backup.conflictData.length, backup.conflictData[0].length).setValues(backup.conflictData);
+      OutErrorRdbSheet.getRange(1, 1, backup.errorData.length, backup.errorData[0].length).setValues(backup.errorData);
 
       // ガントチャートの各シートの復元
       Object.entries(backup.ganttSheets).forEach(([sheetName, sheetData]) => {
