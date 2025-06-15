@@ -71,18 +71,29 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
   
       let j = 0;
       while (j < row.length) {
-        // ガントチャートの棒セルを検出
-        if (row[j] !== "" || (bgRow[j] && bgRow[j] !== "#FFFFFF")) {
+                // ガントチャートの棒セルを検出
+        // 値が存在するか、背景色が白以外の場合にシフトデータとして処理
+        const cellValue = row[j];
+        const cellBg = bgRow[j];
+        const hasValue = cellValue !== "" && cellValue !== null && cellValue !== undefined;
+        const hasNonWhiteBg = cellBg && cellBg.toLowerCase() !== "#ffffff";
+        
+        if (hasValue || hasNonWhiteBg) {
           const startCol = j;
-          const cellValue = row[j];
-          const cellBg = bgRow[j];
-  
+
           // 横方向に同じ値＆背景色が続く間、同じシフトとして扱う
           while (j < row.length && row[j] === cellValue && bgRow[j] && bgRow[j] === cellBg) {
             j++;
           }
   
           const endCol = j - 1;
+          
+          // 空のシフトデータ（値が空で背景色が白）は除外
+          const isEmpty = (!cellValue || cellValue === "") && 
+                         (!cellBg || cellBg.toLowerCase() === "#ffffff");
+          if (isEmpty) {
+            continue;
+          }
           
           // 時間のバリデーション
           if (startCol >= timeHeaders.length || endCol + 1 >= timeHeaders.length) {

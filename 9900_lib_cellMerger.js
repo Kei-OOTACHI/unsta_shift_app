@@ -22,8 +22,12 @@ function mergeSameValuesHorizontally(sheet = undefined, range = undefined) {
       if (row[j] !== row[mergeStart] || row[mergeStart] === "") {
         if (j - mergeStart > 1 && row[mergeStart] !== "") {
           const mergeRange = sheet.getRange(startRow + i, startColumn + mergeStart, 1, j - mergeStart);
-          mergeRange.merge();
-          mergeRange.setHorizontalAlignment("center");
+          try {
+            mergeRange.merge();
+            mergeRange.setHorizontalAlignment("center");
+          } catch (error) {
+            console.warn(`横方向結合エラー: ${mergeRange.getA1Notation()} - ${error.message}`);
+          }
         }
         mergeStart = j;
       }
@@ -31,8 +35,12 @@ function mergeSameValuesHorizontally(sheet = undefined, range = undefined) {
 
     if (row.length - mergeStart > 1 && row[mergeStart] !== "") {
       const mergeRange = sheet.getRange(startRow + i, startColumn + mergeStart, 1, row.length - mergeStart);
-      mergeRange.merge();
-      mergeRange.setHorizontalAlignment("center");
+      try {
+        mergeRange.merge();
+        mergeRange.setHorizontalAlignment("center");
+      } catch (error) {
+        console.warn(`横方向結合エラー: ${mergeRange.getA1Notation()} - ${error.message}`);
+      }
     }
   }
 }
@@ -52,8 +60,12 @@ function mergeSameValuesVertically(sheet = undefined, range = undefined) {
       if (values[i][j] !== values[mergeStart][j] || values[mergeStart][j] === "") {
         if (i - mergeStart > 1 && values[mergeStart][j] !== "") {
           const mergeRange = sheet.getRange(startRow + mergeStart, startColumn + j, i - mergeStart, 1);
-          mergeRange.merge();
-          mergeRange.setHorizontalAlignment("center");
+          try {
+            mergeRange.merge();
+            mergeRange.setHorizontalAlignment("center");
+          } catch (error) {
+            console.warn(`縦方向結合エラー: ${mergeRange.getA1Notation()} - ${error.message}`);
+          }
         }
         mergeStart = i;
       }
@@ -61,8 +73,12 @@ function mergeSameValuesVertically(sheet = undefined, range = undefined) {
 
     if (values.length - mergeStart > 1 && values[mergeStart][j] !== "") {
       const mergeRange = sheet.getRange(startRow + mergeStart, startColumn + j, values.length - mergeStart, 1);
-      mergeRange.merge();
-      mergeRange.setHorizontalAlignment("center");
+      try {
+        mergeRange.merge();
+        mergeRange.setHorizontalAlignment("center");
+      } catch (error) {
+        console.warn(`縦方向結合エラー: ${mergeRange.getA1Notation()} - ${error.message}`);
+      }
     }
   }
 }

@@ -61,10 +61,11 @@ function splitGanttData(ganttValues, ganttBgs) {
   }
   
   function convertObjsTo2dAry(
-    validShiftsMap,
-    conflictShiftObjs,
-    timeHeaders
-  ) {
+  validShiftsMap,
+  conflictShiftObjs,
+  timeHeaders,
+  memberDateIdHeaders
+) {
     // rdbDataとconflictDataのヘッダー行を追加
     const rdbData = [];
     const conflictData = [];
@@ -113,10 +114,25 @@ function splitGanttData(ganttValues, ganttBgs) {
       }
     }
   
-    // マップから直接ganttDataに変換
-    const ganttValues = Array.from(ganttValueMap.values());
-    // 背景色の2次元配列も生成
-    const ganttBgs = Array.from(ganttBgMap.values());
+    // 元のmemberDateIdHeadersの順序を保持してganttDataを生成（空白行も含む）
+    const ganttValues = memberDateIdHeaders.map(memberId => {
+      if (ganttValueMap.has(memberId)) {
+        return ganttValueMap.get(memberId);
+      } else {
+        // 空白行の場合は空の配列を返す
+        return Array(originalTimeHeadersLength).fill("");
+      }
+    });
+    
+    // 背景色も同様に元の順序を保持
+    const ganttBgs = memberDateIdHeaders.map(memberId => {
+      if (ganttBgMap.has(memberId)) {
+        return ganttBgMap.get(memberId);
+      } else {
+        // 空白行の場合は白背景の配列を返す
+        return Array(originalTimeHeadersLength).fill("#FFFFFF");
+      }
+    });
   
           // コンフリクトデータを処理（エラーデータは既に分離済み）
     conflictShiftObjs.forEach((shiftObj) => {

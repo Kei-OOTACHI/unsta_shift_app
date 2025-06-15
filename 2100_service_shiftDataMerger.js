@@ -81,8 +81,12 @@ function integrateShiftData(
 
   results.forEach((result) => {
     if (result && result.success) {
-      newGanttValues[result.dept] = result.ganttValues;
-      newGanttBgs[result.dept] = result.ganttBgs;
+      newGanttValues[result.dept] = {
+        values: result.ganttValues,
+        backgrounds: result.ganttBgs,
+        firstDataColOffset: result.firstDataColOffset,
+        firstDataRowOffset: result.firstDataRowOffset,
+      };
       newRdbData = newRdbData.concat(result.rdbData);
       conflictData = conflictData.concat(result.conflictData);
       errorData = errorData.concat(result.errorData || []); // エラーデータを追加
@@ -101,7 +105,6 @@ function integrateShiftData(
     OutConflictRdbSheet,
     OutErrorRdbSheet,
     newGanttValues,
-    newGanttBgs,
     newRdbData,
     conflictData,
     errorData
@@ -111,52 +114,56 @@ function integrateShiftData(
 function validateAndSeparateRdbData(rdbData) {
   const validRdbData = [];
   const invalidRdbData = [];
-  
+
   if (rdbData.length === 0) {
     return { validRdbData, invalidRdbData };
   }
-  
+
   // ヘッダー行は常に有効として追加
   validRdbData.push(rdbData[0]);
-  
+
   // データ行のバリデーション（1行目以降）
   for (let i = 1; i < rdbData.length; i++) {
     const row = rdbData[i];
     const errorMessages = [];
-    
+
     // 必須フィールドのバリデーション（インデックスは0ベース）
     const memberDateId = row[RDB_COL_INDEXES.memberDateId];
     const startTime = row[RDB_COL_INDEXES.startTime];
     const endTime = row[RDB_COL_INDEXES.endTime];
     const dept = row[RDB_COL_INDEXES.dept];
-    
+
     // memberDateIdのバリデーション
     if (!memberDateId || memberDateId.toString().trim() === "") {
       errorMessages.push("memberDateIdが空です");
     }
-    
+
     // startTimeのバリデーション
     if (!startTime || !(startTime instanceof Date) || isNaN(startTime.getTime())) {
       errorMessages.push("startTimeが無効または空です");
     }
-    
+
     // endTimeのバリデーション
     if (!endTime || !(endTime instanceof Date) || isNaN(endTime.getTime())) {
       errorMessages.push("endTimeが無効または空です");
     }
-    
+
     // startTimeとendTimeの順序チェック
-    if (startTime instanceof Date && endTime instanceof Date && 
-        !isNaN(startTime.getTime()) && !isNaN(endTime.getTime()) &&
-        startTime >= endTime) {
+    if (
+      startTime instanceof Date &&
+      endTime instanceof Date &&
+      !isNaN(startTime.getTime()) &&
+      !isNaN(endTime.getTime()) &&
+      startTime >= endTime
+    ) {
       errorMessages.push("startTimeがendTime以降の時刻です");
     }
-    
+
     // deptのバリデーション
     if (!dept || dept.toString().trim() === "") {
       errorMessages.push("deptが空です");
     }
-    
+
     // エラーがある場合は無効データとして分類
     if (errorMessages.length > 0) {
       const errorRow = row.concat(SHEET_NAMES.IN_RDB, errorMessages.join("、"));
@@ -165,7 +172,7 @@ function validateAndSeparateRdbData(rdbData) {
       validRdbData.push(row);
     }
   }
-  
+
   return { validRdbData, invalidRdbData };
 }
 
@@ -200,34 +207,26 @@ function processDepartment(deptKey, rdbData, ganttData) {
       ganttBgs: deptGanttBgs,
       rdbData: deptRdbData,
       conflictData: deptConflictData,
-    } = convertObjsTo2dAry(validShiftsMap, conflictShiftObjs, timeHeaders);
+    } = convertObjsTo2dAry(validShiftsMap, conflictShiftObjs, timeHeaders, memberDateIdHeaders);
 
     // エラーデータを直接変換
-    const deptErrorData = errorShifts.map(shiftObj => 
-      getColumnOrder(ERROR_COL_INDEXES).map(key => shiftObj[key])
-    );
+    const deptErrorData = errorShifts.map((shiftObj) => getColumnOrder(ERROR_COL_INDEXES).map((key) => shiftObj[key]));
 
-    // ガントチャートのヘッダーとシフトデータを結合
-    const { values: mergedValues, backgrounds: mergedBgs } = mergeGanttData(
-      ganttHeaderValues,
-      deptGanttValues,
-      ganttHeaderBgs,
-      deptGanttBgs,
-      firstDataColOffset,
-      firstDataRowOffset
-    );
-
+    // シフトデータ部分のみを返す（ヘッダー結合処理は廃止）
     return {
       success: true,
       dept,
-      ganttValues: mergedValues,
-      ganttBgs: mergedBgs,
+      ganttValues: deptGanttValues, // シフトデータのみ
+      ganttBgs: deptGanttBgs, // シフトデータのみ
       rdbData: deptRdbData,
       conflictData: deptConflictData,
       errorData: deptErrorData,
+      firstDataColOffset, // firstDataの列オフセット
+      firstDataRowOffset, // firstDataの行オフセット
     };
   } catch (error) {
     console.error(`Error processing department ${deptKey}:`, error);
+    console.error("Stack trace:", error.stack);
     return {
       success: false,
       dept: deptKey,
@@ -241,96 +240,145 @@ function setDataToSheets(
   OutMergedRdbSheet,
   OutConflictRdbSheet,
   OutErrorRdbSheet,
-  ganttValues,
-  ganttBgs,
+  ganttData,
   rdbData,
   conflictData,
   errorData
 ) {
+  const startTime = new Date();
+  const failedSheets = [];
+
   try {
-    // 現在のデータをバックアップ
-    const backup = {
-      rdbData: OutMergedRdbSheet.getDataRange().getValues(),
-      conflictData: OutConflictRdbSheet.getDataRange().getValues(),
-      errorData: OutErrorRdbSheet.getDataRange().getValues(),
-      ganttSheets: {},
-    };
-
-    // ガントチャートの各シートのバックアップ
-    Object.keys(ganttValues).forEach((sheetName) => {
-      const sheet = OutGanttSs.getSheetByName(sheetName);
-      if (sheet) {
-        backup.ganttSheets[sheetName] = {
-          values: sheet.getDataRange().getValues(),
-          backgrounds: sheet.getDataRange().getBackgrounds(),
-        };
-      }
-    });
-
     // データベース、コンフリクト、エラーシートのクリアと更新
-    OutMergedRdbSheet.clear();
-    OutConflictRdbSheet.clear();
-    OutErrorRdbSheet.clear();
-
-    rdbData.unshift(getColumnOrder(RDB_COL_INDEXES));
-    OutMergedRdbSheet.getRange(1, 1, rdbData.length, rdbData[0].length).setValues(rdbData);
-
-    conflictData.unshift(getColumnOrder(CONFLICT_COL_INDEXES));
-    OutConflictRdbSheet.getRange(1, 1, conflictData.length, conflictData[0].length).setValues(conflictData);
-
-    // エラーデータの書き込み（Ganttに存在しない部署のRDBデータ）
-    if (errorData.length > 0) {
-      errorData.unshift(getColumnOrder(ERROR_COL_INDEXES));
-      OutErrorRdbSheet.getRange(1, 1, errorData.length, errorData[0].length).setValues(errorData);
+    try {
+      OutMergedRdbSheet.clear();
+      rdbData.unshift(getColumnOrder(RDB_COL_INDEXES));
+      OutMergedRdbSheet.getRange(1, 1, rdbData.length, rdbData[0].length).setValues(rdbData);
+      console.log(`${SHEET_NAMES.OUT_RDB}シートの更新が完了しました`);
+    } catch (error) {
+      failedSheets.push(`${SHEET_NAMES.OUT_RDB}シート`);
+      throw error;
     }
 
-    // ガントチャートの各シートを処理
-    Object.entries(ganttValues).forEach(([sheetName, sheetValues]) => {
+    try {
+      OutConflictRdbSheet.clear();
+      conflictData.unshift(getColumnOrder(CONFLICT_COL_INDEXES));
+      OutConflictRdbSheet.getRange(1, 1, conflictData.length, conflictData[0].length).setValues(conflictData);
+      console.log(`${SHEET_NAMES.CONFLICT_RDB}シートの更新が完了しました`);
+    } catch (error) {
+      failedSheets.push(`${SHEET_NAMES.CONFLICT_RDB}シート`);
+      throw error;
+    }
+
+    try {
+      OutErrorRdbSheet.clear();
+      // エラーデータの書き込み（Ganttに存在しない部署のRDBデータ）
+      if (errorData.length > 0) {
+        errorData.unshift(getColumnOrder(ERROR_COL_INDEXES));
+        OutErrorRdbSheet.getRange(1, 1, errorData.length, errorData[0].length).setValues(errorData);
+      }
+      console.log(`${SHEET_NAMES.ERROR_RDB}シートの更新が完了しました`);
+    } catch (error) {
+      failedSheets.push(`${SHEET_NAMES.ERROR_RDB}シート`);
+      throw error;
+    }
+  } catch (error) {
+    showRestorePrompt(failedSheets, "現在のスプレッドシート", startTime, error);
+    throw new Error(`データ更新処理を停止しました: ${error.message}`);
+  }
+
+  // ガントチャートの各シートを処理
+  const ganttSsName = OutGanttSs.getName();
+
+  for (const [sheetName, sheetData] of Object.entries(ganttData)) {
+    try {
+      const { values: shiftValues, backgrounds: shiftBgs, firstDataRowOffset, firstDataColOffset } = sheetData;
+
       // 空のガントデータの場合はスキップ
-      if (!sheetValues || sheetValues.length === 0 || (sheetValues.length === 1 && sheetValues[0].length === 0)) {
-        return;
+      if (!shiftValues || shiftValues.length === 0 || (shiftValues.length === 1 && shiftValues[0].length === 0)) {
+        continue;
       }
 
-      const targetSheet = OutGanttSs.getSheetByName(sheetName)?.clear() || OutGanttSs.insertSheet(sheetName);
-      const sheetBgs = ganttBgs[sheetName];
+      // 既存のシートを取得
+      let targetSheet = OutGanttSs.getSheetByName(sheetName);
+      if (!targetSheet) {
+        console.warn(`シート「${sheetName}」が見つかりません。スキップします。`);
+        continue;
+      }
 
-      // データを設定
-      const range = targetSheet.getRange(1, 1, sheetValues.length, sheetValues[0].length);
-      const mergedRanges = range.getMergedRanges();
-      mergedRanges.forEach((mergedRange) => {
-        mergedRange.breakApart();
-      });
-      range.setValues(sheetValues);
-      range.setBackgrounds(sheetBgs);
-      mergeSameValuesHorizontally(targetSheet, range);
-      mergeSameValuesVertically(targetSheet, range);
-    });
-  } catch (error) {
-    console.error("データの更新中にエラーが発生しました:", error);
+      const startRow = firstDataRowOffset + 1; // 1-indexedに変換
+      const startCol = firstDataColOffset + 1; // 1-indexedに変換
 
-    // エラーが発生した場合、バックアップから復元
-    try {
-      // データベース、コンフリクト、エラーシートの復元
-      OutMergedRdbSheet.clear();
-      OutConflictRdbSheet.clear();
-      OutErrorRdbSheet.clear();
-      OutMergedRdbSheet.getRange(1, 1, backup.rdbData.length, backup.rdbData[0].length).setValues(backup.rdbData);
-      OutConflictRdbSheet.getRange(1, 1, backup.conflictData.length, backup.conflictData[0].length).setValues(
-        backup.conflictData
+      // firstData列から右側かつfirstData行から下側の範囲を取得
+      const shiftRange = targetSheet.getRange(startRow, startCol, shiftValues.length, shiftValues[0].length);
+
+      Logger.log("シフトデータ範囲: " + shiftRange.getA1Notation());
+
+      // firstData以降の全範囲の既存結合を解除とクリア（ヘッダー部分は保持）
+      try {
+        // firstData以降の全範囲の結合を解除
+        const mergedRanges = shiftRange.getMergedRanges();
+        mergedRanges.forEach((range) => range.breakApart());
+        shiftRange.clear();
+        // firstData以降の全範囲をクリア（ヘッダー部分は保持）
+      } catch (e) {
+        throw new Error(`対象範囲の結合解除・クリア処理でエラーが発生しました: ${e.message}`);
+      }
+      try {
+        // firstDataの位置からシフトデータを設定
+        shiftRange.setValues(shiftValues);
+        shiftRange.setBackgrounds(shiftBgs);
+      } catch (error) {
+        throw new Error(`シフトデータ設定中にエラーが発生しました: ${error.message}`);
+      }
+
+      // 結合処理を安全に実行（シフトデータ範囲のみ）
+      try {
+        mergeSameValuesHorizontally(targetSheet, shiftRange);
+        mergeSameValuesVertically(targetSheet, shiftRange);
+      } catch (e) {
+        throw new Error(`セル結合処理でエラーが発生しました: ${e.message}`);
+      }
+
+      console.log(`ガントチャート「${ganttSsName}」のシート「${sheetName}」の更新が完了しました`);
+    } catch (error) {
+      showRestorePrompt(
+        [`シート「${sheetName}」`],
+        `ガントチャートスプレッドシート「${ganttSsName}」`,
+        startTime,
+        error
       );
-      OutErrorRdbSheet.getRange(1, 1, backup.errorData.length, backup.errorData[0].length).setValues(backup.errorData);
-
-      // ガントチャートの各シートの復元
-      Object.entries(backup.ganttSheets).forEach(([sheetName, sheetData]) => {
-        const targetSheet = OutGanttSs.getSheetByName(sheetName)?.clear() || OutGanttSs.insertSheet(sheetName);
-        const range = targetSheet.getRange(1, 1, sheetData.values.length, sheetData.values[0].length);
-        range.setValues(sheetData.values);
-        range.setBackgrounds(sheetData.backgrounds);
-      });
-
-      throw new Error("データの更新に失敗しました。元の状態に戻しました。詳細: " + error.message);
-    } catch (restoreError) {
-      throw new Error("データの更新に失敗し、元の状態への復元にも失敗しました。詳細: " + restoreError.message);
+      throw new Error(`ガントチャート更新処理を停止しました: ${error.message}`);
     }
   }
+}
+
+// エラー発生時の復元案内を表示する関数
+function showRestorePrompt(failedSheets, targetDescription, startTime, error) {
+  const formattedStartTime = Utilities.formatDate(startTime, Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm:ss");
+
+  let message = "■ データ更新処理でエラーが発生しました\n" +
+  "【失敗箇所】\n" +
+  targetDescription + "の以下のシート:\n" +
+  failedSheets.map((sheet) => "・" + sheet).join("\n") + "\n\n" +
+  "【エラー詳細】\n" +
+  error.message + "\n\n" +
+  "【復元方法】\n" +
+  formattedStartTime + "\n" +
+  "以下の手順で履歴から復元してください:\n" +
+  "1. 対象のスプレッドシートを開く\n" +
+  "2. ファイルメニュー → 「バージョン履歴」 → 「バージョン履歴を表示」を選択\n" +
+  "3. 処理開始時刻(" + formattedStartTime + ")より前の最新バージョンを選択\n" +
+  "4. 「このバージョンを復元」をクリック\n" +
+  "復元完了後、問題を修正してから再度処理を実行してください。";
+
+  Browser.msgBox("データ更新エラー - 履歴からの復元が必要", message, Browser.Buttons.OK);
+
+  // ログにも出力
+  console.error("=== データ更新処理エラー ===");
+  console.error(`失敗箇所: ${targetDescription}`);
+  console.error(`失敗シート: ${failedSheets.join(", ")}`);
+  console.error(`処理開始時刻: ${formattedStartTime}`);
+  console.error(`エラー: ${error.message}`);
+  console.error("Stack trace:", error.stack);
 }
