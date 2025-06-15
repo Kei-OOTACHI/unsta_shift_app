@@ -27,7 +27,24 @@ function splitGanttData(ganttValues, ganttBgs) {
     const originalMemberDateIdCol = GANTT_COL_INDEXES.memberDateId;
   
     // timescale,memberDateIdのリストを作成（元のインデックスを使用）
-    const timeHeaders = ganttValues[originalTimeRow].slice(firstDataCol);
+    const originalTimeHeaders = ganttValues[originalTimeRow].slice(firstDataCol);
+    
+    // 時間間隔を計算して最後に1つ追加の時間要素を作成
+    const timeHeaders = [...originalTimeHeaders];
+    if (originalTimeHeaders.length >= 2) {
+      // 最後の2つの時間から間隔を計算
+      const lastTime = new Date(originalTimeHeaders[originalTimeHeaders.length - 1]);
+      const prevTime = new Date(originalTimeHeaders[originalTimeHeaders.length - 2]);
+      const timeDiff = lastTime.getTime() - prevTime.getTime();
+      const nextTime = new Date(lastTime.getTime() + timeDiff);
+      timeHeaders.push(nextTime);
+    } else if (originalTimeHeaders.length === 1) {
+      // 時間要素が1つしかない場合は1時間後を追加
+      const lastTime = new Date(originalTimeHeaders[0]);
+      const nextTime = new Date(lastTime.getTime() + 60 * 60 * 1000);
+      timeHeaders.push(nextTime);
+    }
+    
     const memberDateIdHeaders = ganttValues.slice(firstDataRow).map((row) => row[originalMemberDateIdCol]);
   
     return {
@@ -49,8 +66,8 @@ function splitGanttData(ganttValues, ganttBgs) {
     timeHeaders
   ) {
     // rdbDataとconflictDataのヘッダー行を追加
-    const rdbData = [getColumnOrder(RDB_COL_INDEXES)];
-    const conflictData = [getColumnOrder(CONFLICT_COL_INDEXES)];
+    const rdbData = [];
+    const conflictData = [];
     
     // Mapからrdbデータを直接生成（中間変換なし）
     const processedShiftIds = new Set();
@@ -59,6 +76,9 @@ function splitGanttData(ganttValues, ganttBgs) {
     const ganttValueMap = new Map();
     // 背景色用のmemberBgMap（新規追加）
     const ganttBgMap = new Map();
+    
+    // timeHeadersから最後の追加要素を除外（endTime計算用に追加されたもの）
+    const originalTimeHeadersLength = timeHeaders.length - 1;
     
     // 各メンバーのシフト情報を処理
     for (const [memberId, timeMap] of validShiftsMap.entries()) {
@@ -70,10 +90,10 @@ function splitGanttData(ganttValues, ganttBgs) {
             rdbData.push(rdbRow);
           processedShiftIds.add(shiftInfo.shiftId);
           
-          // ganttData用のデータも準備
+          // ganttData用のデータも準備（元の列数で初期化）
           if (!ganttValueMap.has(shiftInfo.memberDateId)) {
-            ganttValueMap.set(shiftInfo.memberDateId, Array(timeHeaders.length).fill(""));
-            ganttBgMap.set(shiftInfo.memberDateId, Array(timeHeaders.length).fill("#FFFFFF")); // 背景色の初期値は白
+            ganttValueMap.set(shiftInfo.memberDateId, Array(originalTimeHeadersLength).fill(""));
+            ganttBgMap.set(shiftInfo.memberDateId, Array(originalTimeHeadersLength).fill("#FFFFFF")); // 背景色の初期値は白
           }
           
           const timeRow = ganttValueMap.get(shiftInfo.memberDateId);
@@ -82,7 +102,8 @@ function splitGanttData(ganttValues, ganttBgs) {
           const endIndex = findTimeIndex(timeHeaders, shiftInfo.endTime);
           
           if (startIndex !== -1 && endIndex !== -1) {
-            for (let i = startIndex; i < endIndex; i++) {
+            // 元の列数の範囲内でのみシフトデータを設定
+            for (let i = startIndex; i < Math.min(endIndex, originalTimeHeadersLength); i++) {
               timeRow[i] = shiftInfo.job;
               // 背景色も設定
               bgRow[i] = shiftInfo.background || "#FFFFFF";
@@ -97,12 +118,12 @@ function splitGanttData(ganttValues, ganttBgs) {
     // 背景色の2次元配列も生成
     const ganttBgs = Array.from(ganttBgMap.values());
   
-    // コンフリクトデータを処理
+          // コンフリクトデータを処理（エラーデータは既に分離済み）
     conflictShiftObjs.forEach((shiftObj) => {
       const conflictRow = getColumnOrder(CONFLICT_COL_INDEXES).map((key) => shiftObj[key]);
       conflictData.push(conflictRow);
     });
-  
+
     return {
       ganttValues,
       ganttBgs,

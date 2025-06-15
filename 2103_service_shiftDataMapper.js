@@ -1,7 +1,6 @@
-
 function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateIdHeaders, rdbData, deptName) {
     // memberIdをキーとする時間枠データのマップを作成（ガントチャートのデータ）
-    const shiftsFromGanttMap = gantt2dAryToMap(ganttValue, ganttBg, timeHeaders, memberDateIdHeaders, deptName);
+    const { validShiftsMap: shiftsFromGanttMap, errorShifts: ganttErrorShifts } = gantt2dAryToMap(ganttValue, ganttBg, timeHeaders, memberDateIdHeaders, deptName);
   
     // RDBからのデータもmemberIdをキー、時間枠をマップとして変換
     const shiftsFromRdbMap = rdb2dAryToMap(rdbData, timeHeaders);
@@ -13,23 +12,55 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
       timeHeaders
     );
   
-    // 中間配列変換を削除し、直接MapオブジェクトとconflictShiftObjsを返す
-    return { validShiftsMap, conflictShiftObjs };
+    // エラーデータとコンフリクトデータを分離して返す
+    return { 
+      validShiftsMap, 
+      conflictShiftObjs, 
+      errorShifts: ganttErrorShifts 
+    };
   }
   
   // ガントチャートデータをmemberIdをキーとするマップに変換
   function gantt2dAryToMap(ganttValue, ganttBg, timeHeaders, memberDateIdHeaders, deptName) {
     // memberIdをキーとし、時間ごとのシフト情報を格納するマップ
     const shiftsMap = new Map();
+    const errorShifts = [];
   
     // 各行を走査
     for (let i = 0; i < ganttValue.length; i++) {
       const row = ganttValue[i];
       const bgRow = ganttBg[i];
       const memberId = memberDateIdHeaders[i];
+      const errorMessages = [];
   
-      if (!memberId) continue; // memberIdが無効な場合はスキップ
+      // memberIdのバリデーション
+      if (!memberId || memberId.toString().trim() === "") {
+        // memberIdが無効な場合、この行にシフトデータがあるかチェック
+        const hasShiftData = row.some(cell => cell !== "" && cell !== null && cell !== undefined);
+        if (hasShiftData) {
+          errorMessages.push("memberDateIdが空または無効です");
+        } else {
+          continue; // シフトデータがない場合はスキップ
+        }
+      }
   
+      // エラーメッセージがある場合はエラーシフトとして記録
+      if (errorMessages.length > 0) {
+        // 行全体の情報を使ってエラーシフトを作成
+        const errorShift = {
+          job: "",
+          dept: deptName,
+          background: "",
+          source: "Gantt",
+          memberDateId: memberId || "",
+          startTime: "",
+          endTime: "",
+          errorMessage: errorMessages.join("、")
+        };
+        errorShifts.push(errorShift);
+        continue; // エラーがある行は処理をスキップ
+      }
+
       // このメンバーのマップがなければ初期化
       if (!shiftsMap.has(memberId)) {
         shiftsMap.set(memberId, new Map());
@@ -52,8 +83,58 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
           }
   
           const endCol = j - 1;
+          
+          // 時間のバリデーション
+          if (startCol >= timeHeaders.length || endCol + 1 >= timeHeaders.length) {
+            // 時間範囲が無効な場合はエラーシフトとして記録
+            const errorShift = {
+              job: cellValue,
+              dept: deptName,
+              background: cellBg,
+              source: "Gantt",
+              memberDateId: memberId,
+              startTime: "",
+              endTime: "",
+              errorMessage: "時間範囲が無効です（timeHeadersの範囲外）"
+            };
+            errorShifts.push(errorShift);
+            continue;
+          }
+          
           const startTime = new Date(timeHeaders[startCol]);
           const endTime = new Date(timeHeaders[endCol + 1]);
+          
+          // 時間の有効性チェック
+          if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
+            const errorShift = {
+              job: cellValue,
+              dept: deptName,
+              background: cellBg,
+              source: "Gantt",
+              memberDateId: memberId,
+              startTime: timeHeaders[startCol],
+              endTime: timeHeaders[endCol + 1],
+              errorMessage: "startTimeまたはendTimeが無効な日付です"
+            };
+            errorShifts.push(errorShift);
+            continue;
+          }
+          
+          // startTimeとendTimeの順序チェック
+          if (startTime >= endTime) {
+            const errorShift = {
+              job: cellValue,
+              dept: deptName,
+              background: cellBg,
+              source: "Gantt",
+              memberDateId: memberId,
+              startTime,
+              endTime,
+              errorMessage: "startTimeがendTime以降の時刻です"
+            };
+            errorShifts.push(errorShift);
+            continue;
+          }
   
           // シフト全体の情報を作成
           const shiftInfo = {
@@ -79,7 +160,7 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
       }
     }
   
-    return shiftsMap;
+    return { validShiftsMap: shiftsMap, errorShifts };
   }
   
   // RDBデータをmemberIdをキーとするマップに変換
