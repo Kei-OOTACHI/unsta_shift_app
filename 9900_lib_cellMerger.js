@@ -7,8 +7,6 @@ function buildCommonMenu(ui) {
 function mergeSameValuesHorizontally(sheet = undefined, range = undefined) {
   if (!sheet) sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   if (!range) range = sheet.getActiveRange();
-  Logger.log(sheet.getName());
-  Logger.log(range.getA1Notation());
   const values = range.getValues();
 
   const startRow = range.getRow();
@@ -63,6 +61,7 @@ function mergeSameValuesVertically(sheet = undefined, range = undefined) {
           try {
             mergeRange.merge();
             mergeRange.setHorizontalAlignment("center");
+            mergeRange.setVerticalAlignment("middle");
           } catch (error) {
             console.warn(`縦方向結合エラー: ${mergeRange.getA1Notation()} - ${error.message}`);
           }
@@ -76,6 +75,7 @@ function mergeSameValuesVertically(sheet = undefined, range = undefined) {
       try {
         mergeRange.merge();
         mergeRange.setHorizontalAlignment("center");
+        mergeRange.setVerticalAlignment("middle");
       } catch (error) {
         console.warn(`縦方向結合エラー: ${mergeRange.getA1Notation()} - ${error.message}`);
       }
