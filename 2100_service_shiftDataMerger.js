@@ -131,6 +131,16 @@ function integrateShiftData(
     conflictData,
     errorData
   );
+  // rebuildSheets(
+  //   OutGanttSs,
+  //   OutMergedRdbSheet,
+  //   OutConflictRdbSheet,
+  //   OutErrorRdbSheet,
+  //   newGanttValues,
+  //   newRdbData,
+  //   conflictData,
+  //   errorData
+  // );
 
   // 処理完了の通知
   SpreadsheetApp.getActive().toast("シフトデータ統合処理が完了しました！", "完了");
@@ -260,4 +270,160 @@ function processDepartment(deptKey, rdbData, ganttData) {
       error: error.toString(),
     };
   }
+}
+
+function setDataToSheets(
+  OutGanttSs,
+  OutMergedRdbSheet,
+  OutConflictRdbSheet,
+  OutErrorRdbSheet,
+  ganttData,
+  rdbData,
+  conflictData,
+  errorData
+) {
+  const startTime = new Date();
+  const failedSheets = [];
+
+  try {
+    // データベース、コンフリクト、エラーシートのクリアと更新
+    try {
+      OutMergedRdbSheet.clear();
+      rdbData.unshift(getColumnOrder(RDB_COL_INDEXES));
+      OutMergedRdbSheet.getRange(1, 1, rdbData.length, rdbData[0].length).setValues(rdbData);
+      console.log(`${SHEET_NAMES.OUT_RDB}シートの更新が完了しました`);
+    } catch (error) {
+      failedSheets.push(`${SHEET_NAMES.OUT_RDB}シート`);
+      throw error;
+    }
+
+    try {
+      OutConflictRdbSheet.clear();
+      conflictData.unshift(getColumnOrder(CONFLICT_COL_INDEXES));
+      OutConflictRdbSheet.getRange(1, 1, conflictData.length, conflictData[0].length).setValues(conflictData);
+      console.log(`${SHEET_NAMES.CONFLICT_RDB}シートの更新が完了しました`);
+    } catch (error) {
+      failedSheets.push(`${SHEET_NAMES.CONFLICT_RDB}シート`);
+      throw error;
+    }
+
+    try {
+      OutErrorRdbSheet.clear();
+      // エラーデータの書き込み（Ganttに存在しない部署のRDBデータ）
+      if (errorData.length > 0) {
+        errorData.unshift(getColumnOrder(ERROR_COL_INDEXES));
+        OutErrorRdbSheet.getRange(1, 1, errorData.length, errorData[0].length).setValues(errorData);
+      }
+      console.log(`${SHEET_NAMES.ERROR_RDB}シートの更新が完了しました`);
+    } catch (error) {
+      failedSheets.push(`${SHEET_NAMES.ERROR_RDB}シート`);
+      throw error;
+    }
+  } catch (error) {
+    showRestorePrompt(failedSheets, "現在のスプレッドシート", startTime, error);
+    throw new Error(`データ更新処理を停止しました: ${error.message}`);
+  }
+
+  // ガントチャートの各シートを処理
+  const ganttSsName = OutGanttSs.getName();
+
+  for (const [sheetName, sheetData] of Object.entries(ganttData)) {
+    try {
+      const { ganttShiftValues: shiftValues, ganttShiftBgs: shiftBgs, firstDataRowOffset, firstDataColOffset } = sheetData;
+
+      // 空のガントデータの場合はスキップ
+      if (!shiftValues || shiftValues.length === 0 || (shiftValues.length === 1 && shiftValues[0].length === 0)) {
+        continue;
+      }
+
+      // 既存のシートを取得
+      const targetSheet = OutGanttSs.getSheetByName(sheetName);
+      if (!targetSheet) {
+        console.warn(`シート「${sheetName}」が見つかりません。スキップします。`);
+        continue;
+      }
+
+      const startRow = firstDataRowOffset + 1; // 1-indexedに変換
+      const startCol = firstDataColOffset + 1; // 1-indexedに変換
+
+      // firstData列から右側かつfirstData行から下側の範囲を取得
+      const shiftRange = targetSheet.getRange(startRow, startCol, shiftValues.length, shiftValues[0].length);
+
+      Logger.log("シフトデータ範囲: " + shiftRange.getA1Notation());
+
+      // firstData以降の全範囲の既存結合を解除とクリア（ヘッダー部分は保持）
+      try {
+        // firstData以降の全範囲の結合を解除
+        const mergedRanges = shiftRange.getMergedRanges();
+        mergedRanges.forEach((range) => range.breakApart());
+        shiftRange.clear();
+        // firstData以降の全範囲をクリア（ヘッダー部分は保持）
+      } catch (e) {
+        throw new Error(`対象範囲の結合解除・クリア処理でエラーが発生しました: ${e.message}`);
+      }
+      try {
+        // firstDataの位置からシフトデータを設定
+        shiftRange.setValues(shiftValues);
+        shiftRange.setBackgrounds(shiftBgs);
+      } catch (error) {
+        throw new Error(`シフトデータ設定中にエラーが発生しました: ${error.message}`);
+      }
+
+      // 結合処理を安全に実行（シフトデータ範囲のみ）
+      try {
+        mergeSameValuesHorizontally(targetSheet, shiftRange);
+        // mergeSameValuesVertically(targetSheet, shiftRange);
+      } catch (e) {
+        throw new Error(`セル結合処理でエラーが発生しました: ${e.message}`);
+      }
+
+      console.log(`ガントチャート「${ganttSsName}」のシート「${sheetName}」の更新が完了しました`);
+    } catch (error) {
+      showRestorePrompt(
+        [`シート「${sheetName}」`],
+        `ガントチャートスプレッドシート「${ganttSsName}」`,
+        startTime,
+        error
+      );
+      throw new Error(`ガントチャート更新処理を停止しました: ${error.message}`);
+    }
+  }
+}
+
+
+// エラー発生時の復元案内を表示する関数
+function showRestorePrompt(failedSheets, targetDescription, startTime, error) {
+  const formattedStartTime = Utilities.formatDate(startTime, Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm:ss");
+
+  let message =
+    "■ データ更新処理でエラーが発生しました\n" +
+    "【失敗箇所】\n" +
+    targetDescription +
+    "の以下のシート:\n" +
+    failedSheets.map((sheet) => "・" + sheet).join("\n") +
+    "\n\n" +
+    "【エラー詳細】\n" +
+    error.message +
+    "\n\n" +
+    "【復元方法】\n" +
+    formattedStartTime +
+    "\n" +
+    "以下の手順で履歴から復元してください:\n" +
+    "1. 対象のスプレッドシートを開く\n" +
+    "2. ファイルメニュー → 「バージョン履歴」 → 「バージョン履歴を表示」を選択\n" +
+    "3. 処理開始時刻(" +
+    formattedStartTime +
+    ")より前の最新バージョンを選択\n" +
+    "4. 「このバージョンを復元」をクリック\n" +
+    "復元完了後、問題を修正してから再度処理を実行してください。";
+
+  Browser.msgBox("データ更新エラー - 履歴からの復元が必要", message, Browser.Buttons.OK);
+
+  // ログにも出力
+  console.error("=== データ更新処理エラー ===");
+  console.error(`失敗箇所: ${targetDescription}`);
+  console.error(`失敗シート: ${failedSheets.join(", ")}`);
+  console.error(`処理開始時刻: ${formattedStartTime}`);
+  console.error(`エラー: ${error.message}`);
+  console.error("Stack trace:", error.stack);
 }

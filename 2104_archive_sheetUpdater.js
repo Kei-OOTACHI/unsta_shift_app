@@ -1,9 +1,12 @@
 /**
  * シート更新サービス（2101_service_sheetUpdater.js）
  *
- * このファイルは、2100_service_shiftDataMerger.jsのsetDataToSheets関数を
- * 機能ごとに分割した関数群を含みます。
- *
+ *   このファイルは、2100_service_shiftDataMerger.jsのsetDataToSheets関数を改良した、rebuidSheets関数とその関数から呼び出される関数群のファイルです。
+ * SetDataToSheets関数との大きな違いは、シートのシフトデータ部分のみを書き換えるのではなく、シートのヘッダー部分も含めて全てのデータを書き換えるようにしたことです。
+ * これにより、セルの結合周りのエラーを無視してシートを更新できる反面、セルの高さの調節処理などが必要になり、実行時間が長くなるという欠点を持っています。
+ *   現在はここに記述されている関数群は、2100_service_shiftDataMerger.jsのmain関数から始まる一連の処理からは呼び出されていない、機能していない関数群ですが、
+ * どうしてもsetDataToSheets関数のgetMergedRanges付近のデバッグがうまくいかないときに、このrebuildSheets関数に切り替えて運用することを想定して残しています。
+ * 
  * 主な機能：
  * 1. データベース系シート（RDB、CONFLICT、ERROR）の更新
  * 2. ガントチャートシートの更新
@@ -26,7 +29,7 @@
  * @param {Array} conflictData - コンフリクトデータ
  * @param {Array} errorData - エラーデータ
  */
-function setDataToSheets(
+function rebuildSheets(
   OutGanttSs,
   OutMergedRdbSheet,
   OutConflictRdbSheet,
@@ -296,6 +299,53 @@ function setGanttDataToSheet(
 }
 
 /**
+ * ガントデータを結合する
+ * @param {Array} ganttHeaderValues - ガントヘッダー値
+ * @param {Array} ganttShiftValues - ガントシフト値
+ * @param {Array} ganttHeaderBgs - ガントヘッダー背景色
+ * @param {Array} ganttShiftBgs - ガントシフト背景色
+ * @param {number} firstDataColOffset - 最初のデータ列オフセット
+ * @param {number} firstDataRowOffset - 最初のデータ行オフセット
+ * @returns {Object} 結合後のデータと背景色
+ */
+function mergeGanttData(
+  ganttHeaderValues,
+  ganttShiftValues,
+  ganttHeaderBgs,
+  ganttShiftBgs,
+  firstDataColOffset,
+  firstDataRowOffset
+) {
+  // オフセットを使用してfirstDataの位置を計算
+  const firstDataCol = firstDataColOffset;
+  const firstDataRow = firstDataRowOffset;
+
+  // 結合後のデータを格納する配列
+  const mergedValues = [];
+  const mergedBgs = [];
+
+  // 上部ヘッダー行を追加（そのまま）
+  for (let i = 0; i < firstDataRow; i++) {
+    mergedValues.push(ganttHeaderValues[i]);
+    mergedBgs.push(ganttHeaderBgs[i]);
+  }
+
+  // 左側ヘッダー列とシフトデータを結合して追加
+  for (let i = 0; i < ganttShiftValues.length; i++) {
+    const headerRow = ganttHeaderValues[i + firstDataRow];
+    const bgHeaderRow = ganttHeaderBgs[i + firstDataRow];
+
+    mergedValues.push([...headerRow, ...ganttShiftValues[i]]);
+    mergedBgs.push([...bgHeaderRow, ...ganttShiftBgs[i]]);
+  }
+
+  return {
+    values: mergedValues,
+    backgrounds: mergedBgs,
+  };
+}
+
+/**
  * ガントシートにセル結合を適用する
  * @param {Object} sheet - 対象シート
  * @param {Array} ganttShiftValues - ガントシフト値
@@ -313,41 +363,4 @@ function applyGanttCellMerging(sheet, ganttShiftValues, firstDataRowOffset, firs
   } catch (e) {
     throw new Error(`セル結合処理でエラーが発生しました: ${e.message}`);
   }
-}
-
-// エラー発生時の復元案内を表示する関数
-function showRestorePrompt(failedSheets, targetDescription, startTime, error) {
-  const formattedStartTime = Utilities.formatDate(startTime, Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm:ss");
-
-  let message =
-    "■ データ更新処理でエラーが発生しました\n" +
-    "【失敗箇所】\n" +
-    targetDescription +
-    "の以下のシート:\n" +
-    failedSheets.map((sheet) => "・" + sheet).join("\n") +
-    "\n\n" +
-    "【エラー詳細】\n" +
-    error.message +
-    "\n\n" +
-    "【復元方法】\n" +
-    formattedStartTime +
-    "\n" +
-    "以下の手順で履歴から復元してください:\n" +
-    "1. 対象のスプレッドシートを開く\n" +
-    "2. ファイルメニュー → 「バージョン履歴」 → 「バージョン履歴を表示」を選択\n" +
-    "3. 処理開始時刻(" +
-    formattedStartTime +
-    ")より前の最新バージョンを選択\n" +
-    "4. 「このバージョンを復元」をクリック\n" +
-    "復元完了後、問題を修正してから再度処理を実行してください。";
-
-  Browser.msgBox("データ更新エラー - 履歴からの復元が必要", message, Browser.Buttons.OK);
-
-  // ログにも出力
-  console.error("=== データ更新処理エラー ===");
-  console.error(`失敗箇所: ${targetDescription}`);
-  console.error(`失敗シート: ${failedSheets.join(", ")}`);
-  console.error(`処理開始時刻: ${formattedStartTime}`);
-  console.error(`エラー: ${error.message}`);
-  console.error("Stack trace:", error.stack);
 }
