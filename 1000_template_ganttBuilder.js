@@ -1,15 +1,13 @@
 function buildFmMenu(ui) {
-  return ui.createMenu("FMシート作成")
+  return ui.createMenu("1.シフト表テンプレ作成支援")
     .addItem("時間軸を設定", "setTimescale")
     .addItem("行セットを複製", "duplicateRows");
 }
 
 // --- 時間軸設定機能 ---
 function setTimescale() {
-  const startCell = promptRangeSelection(
-    "タイムスケールを挿入開始するセルは、現在選択されているセルで問題ないですか。\n  問題なければ「OK」を押下。\n  選びなおす場合は「キャンセル」を押下し、再実行。"
-  );
-  if (!startCell) return;
+  validateNamedRange(RANGE_NAMES.TIMESCALE_START_CELL);
+  const startCell = SpreadsheetApp.getActiveSpreadsheet().getRangeByName(RANGE_NAMES.TIMESCALE_START_CELL);
 
   const fieldConfigs = [
     { id: "startTime", label: "開始時刻", type: "time", required: true },

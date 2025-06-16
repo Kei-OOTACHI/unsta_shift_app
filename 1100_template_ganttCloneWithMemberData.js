@@ -16,8 +16,8 @@
  * @returns {SpreadsheetApp.Menu} 構築されたメニューオブジェクト
  */
 function buildGanttMenu(ui) {
-  return ui.createMenu("ガントチャート作成")
-    .addItem("局ごとのガントチャートシートを作成", "promptUserForGanttChartInfo");
+  return ui.createMenu("2.シフト表SS作成")
+    .addItem("シフト表SSに「1~2.シフト表テンプレ」をコピーして、「2~3.メンバー情報」のデータを局ごとに展開", "promptUserForGanttChartInfo");
 }
 
 /**
@@ -25,16 +25,14 @@ function buildGanttMenu(ui) {
  */
 function promptUserForGanttChartInfo() {
   // ガントチャートテンプレートの範囲選択
-  const ganttHeaderRange = promptRangeSelection(
-    "ガントチャートの見出しは、現在選択されている範囲で問題ないですか。\n  問題なければ「OK」を押下。\n  選びなおす場合は「キャンセル」を押下し、再実行。"
-  );
-  if (!ganttHeaderRange) return; // キャンセルされた場合
+  validateNamedRange(RANGE_NAMES.GANTT_HEADER_ROW);
+  const ganttHeaderRange = SpreadsheetApp.getActiveSpreadsheet().getRangeByName(RANGE_NAMES.GANTT_HEADER_ROW);
 
   // ダイアログでパラメータを取得
   const fieldConfigs = [
     {
       id: "targetUrl",
-      label: "対象スプレッドシートのURL",
+      label: "空のSSのURLを入力（ここに入力したURLのSSがシフト表になります）",
       type: "text",
       required: true,
     },
@@ -46,16 +44,16 @@ function promptUserForGanttChartInfo() {
     },
     {
       id: "insertBlankLine",
-      label: "メンバー間に空白行を挿入する",
-      type: "checkbox",
+      label: "メンバー間に空白行を挿入するなら☑",
+      type: "boolean",
       required: false,
     },
   ];
 
   showCustomDialog({
     fields: fieldConfigs,
-    title: "ガントチャート作成パラメータ",
-    message: "ガントチャートテンプレート複製のパラメータを入力してください",
+    title: "シフト表SS作成パラメータ",
+    message: "シフト表SS作成のパラメータを入力してください",
     onSubmitFuncName: "handleGanttDialogSubmit",
     context: { ganttHeaderRange: ganttHeaderRange.getA1Notation() },
   });
@@ -124,7 +122,7 @@ function createGanttChartsWithMemberData(targetUrl, daysPerMember, insertBlankLi
     Logger.log(`パラメータ: targetUrl=${targetUrl}, daysPerMember=${daysPerMember}, insertBlankLine=${insertBlankLine}, ganttHeaderRangeA1=${ganttHeaderRangeA1}`);
     
     const activeSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    const ganttTemplateSheet = activeSpreadsheet.getSheetByName(GANTT_TEMPLATE_SHEET_NAME);
+    const ganttTemplateSheet = activeSpreadsheet.getSheetByName(SHEET_NAMES.GANTT_TEMPLATE);
 
     // 2. メンバー情報の取得
     Logger.log("メンバー情報を取得中...");
@@ -481,9 +479,9 @@ function duplicateMemberDataRows(dataArray, duplicateCount, insertBlankLine) {
  */
 function updateMemberDataSheetWithIds(spreadsheet, memberDataWithIds) {
   try {
-    const memberSheet = spreadsheet.getSheetByName(MEMBER_DATA_SHEET_NAME);
+    const memberSheet = spreadsheet.getSheetByName(SHEET_NAMES.MEMBER_DATA);
     if (!memberSheet) {
-      Logger.log(`警告: シート「${MEMBER_DATA_SHEET_NAME}」が見つかりません`);
+      Logger.log(`警告: シート「${SHEET_NAMES.MEMBER_DATA}」が見つかりません`);
       return;
     }
 

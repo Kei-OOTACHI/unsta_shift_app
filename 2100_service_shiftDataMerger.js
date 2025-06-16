@@ -6,11 +6,12 @@ const SHEET_NAMES = {
   OUT_RDB: "4.登録済み_出力データ",
   CONFLICT_RDB: "4.登録失敗_重複データ",
   ERROR_RDB: "4.登録失敗_エラーデータ",
-  GANTT_TEMPLATE: "1~2.GCテンプレ",
+  GANTT_TEMPLATE: "1~2.シフト表テンプレ",
+  MEMBER_DATA: "2~3.メンバー情報",
 };
 
 function buildShiftDataMergerMenu(ui) {
-  return ui.createMenu("シフトデータ統合").addItem("シフトデータを統合", "main");
+  return ui.createMenu("4.シフトデータ登録").addItem("「4.登録予定_入力データ」のシフトデータをシフト表SSに反映", "main");
 }
 
 function main() {

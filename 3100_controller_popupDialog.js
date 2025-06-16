@@ -1,4 +1,4 @@
-// 範囲選択プロンプト
+// 範囲選択プロンプト(非推奨。名前付き範囲の使用を推奨。現在この関数を使用している機能はない。)
 function promptRangeSelection(message) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   const ui = SpreadsheetApp.getUi();
@@ -238,5 +238,49 @@ function showRowDuplicationDialog(orgRange) {
     onSubmitFuncName: "handleFormSubmit",
     onCancelFuncName: "handleFormCancel",
     context: { orgRange: orgRange },
+  });
+}
+
+/**
+ * 使用例：設定ダイアログ（boolean型を含む）
+ */
+function showSettingsDialog() {
+  const fieldConfigs = [
+    {
+      id: "enableNotifications",
+      label: "通知を有効にする",
+      type: "boolean",
+      value: false,
+      required: false,
+    },
+    {
+      id: "autoSave",
+      label: "自動保存機能",
+      type: "boolean",
+      value: true,
+      required: false,
+    },
+    {
+      id: "confirmBeforeDelete",
+      label: "削除前に確認する",
+      type: "boolean",
+      value: true,
+      required: true,
+    },
+    {
+      id: "maxItems",
+      label: "最大アイテム数",
+      type: "number",
+      value: 100,
+      required: true,
+    },
+  ];
+
+  showCustomDialog({
+    fields: fieldConfigs,
+    title: "設定",
+    message: "アプリケーションの設定を変更してください",
+    onSubmitFuncName: "handleSettingsSubmit",
+    onCancelFuncName: "handleSettingsCancel",
   });
 }

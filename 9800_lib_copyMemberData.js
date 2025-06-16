@@ -20,9 +20,6 @@ const REQUIRED_MEMBER_DATA_HEADERS = {
     UPDATE: [COL_HEADER_NAMES.MEMBER_DATE_ID, COL_HEADER_NAMES.MEMBER_ID]
   }
 };
-const MEMBER_DATA_SHEET_NAME = "メンバー情報";
-const GANTT_TEMPLATE_SHEET_NAME = "GCテンプレ";
-const INPUT_SHEET_NAME = "Input";
 
 /**
  * エラーの詳細情報をログに出力するヘルパー関数（共通ライブラリ用）
@@ -64,14 +61,14 @@ function getMemberDataAndHeaders(spreadsheet, requiredHeaders) {
       requiredHeaders: requiredHeaders
     });
     
-    const memberSheet = spreadsheet.getSheetByName(MEMBER_DATA_SHEET_NAME);
+    const memberSheet = spreadsheet.getSheetByName(SHEET_NAMES.MEMBER_DATA);
     if (!memberSheet) {
-      const errorMessage = `シート「${MEMBER_DATA_SHEET_NAME}」が見つかりません。`;
+      const errorMessage = `シート「${SHEET_NAMES.MEMBER_DATA}」が見つかりません。`;
       console.error(errorMessage);
       throw new Error(errorMessage);
     }
     
-    console.log(`シート「${MEMBER_DATA_SHEET_NAME}」を取得しました`);
+    console.log(`シート「${SHEET_NAMES.MEMBER_DATA}」を取得しました`);
     
     const memberDataRange = memberSheet.getDataRange();
     const memberData = memberDataRange.getValues();
@@ -95,7 +92,7 @@ function getMemberDataAndHeaders(spreadsheet, requiredHeaders) {
     logLibraryError(error, 'getMemberDataAndHeaders', {
       spreadsheetName: spreadsheet ? spreadsheet.getName() : 'unknown',
       requiredHeaders: requiredHeaders,
-      memberDataSheetName: MEMBER_DATA_SHEET_NAME
+      memberDataSheetName: SHEET_NAMES.MEMBER_DATA
     });
     throw error;
   }

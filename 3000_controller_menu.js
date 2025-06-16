@@ -12,7 +12,7 @@ function onOpen() {
     buildGanttMenu(ui),
     buildMemberMenu(ui),
     buildShiftDataMergerMenu(ui),
-    buildCommonMenu(ui)
+    // buildCommonMenu(ui)
   ];
   
   subMenus.forEach(subMenu => menu.addSubMenu(subMenu));
