@@ -69,6 +69,7 @@ function splitGanttData(ganttValues, ganttBgs) {
     // rdbDataとconflictDataのヘッダー行を追加
     const rdbData = [];
     const conflictData = [];
+    const errorData = []; // エラーデータを追加
     
     // Mapからrdbデータを直接生成（中間変換なし）
     const processedShiftIds = new Set();
@@ -81,13 +82,39 @@ function splitGanttData(ganttValues, ganttBgs) {
     // timeHeadersから最後の追加要素を除外（endTime計算用に追加されたもの）
     const originalTimeHeadersLength = timeHeaders.length - 1;
     
+    // memberDateIdHeadersをSetに変換して高速検索用に
+    const memberDateIdHeadersSet = new Set(memberDateIdHeaders);
+    
     // 各メンバーのシフト情報を処理
-    for (const [memberId, timeMap] of validShiftsMap.entries()) {
+    for (const [memberDateId, timeMap] of validShiftsMap.entries()) {
+      // memberDateIdがmemberDateIdHeadersに存在しない場合のチェック
+      if (!memberDateIdHeadersSet.has(memberDateId)) {
+        // このmemberDateIdのシフトデータをエラーデータとして出力
+        for (const [timeKey, shiftInfo] of timeMap.entries()) {
+          const errorRow = getColumnOrder(ERROR_COL_INDEXES).map(key => {
+            if (key === 'startTime' || key === 'endTime') {
+              return formatTimeToHHMM(shiftInfo[key]);
+            } else if (key === 'errorMessage') {
+              return `memberDateId「${memberDateId}」がガントチャートのヘッダーに見つかりません`;
+            }
+            return shiftInfo[key];
+          });
+          errorData.push(errorRow);
+        }
+        continue; // このmemberDateIdは処理をスキップ
+      }
+      
       // 各時間スロットごとに処理
       for (const [timeKey, shiftInfo] of timeMap.entries()) {
                   // まだ処理していないシフトIDの場合のみrdbDataに追加
           if (!processedShiftIds.has(shiftInfo.shiftId)) {
-            const rdbRow = getColumnOrder(RDB_COL_INDEXES).map(key => shiftInfo[key]);
+            const rdbRow = getColumnOrder(RDB_COL_INDEXES).map(key => {
+              // startTimeとendTimeはh:mm形式の文字列に変換
+              if (key === 'startTime' || key === 'endTime') {
+                return formatTimeToHHMM(shiftInfo[key]);
+              }
+              return shiftInfo[key];
+            });
             rdbData.push(rdbRow);
           processedShiftIds.add(shiftInfo.shiftId);
           
@@ -115,9 +142,9 @@ function splitGanttData(ganttValues, ganttBgs) {
     }
   
     // 元のmemberDateIdHeadersの順序を保持してganttDataを生成（空白行も含む）
-    const ganttValues = memberDateIdHeaders.map(memberId => {
-      if (ganttValueMap.has(memberId)) {
-        return ganttValueMap.get(memberId);
+    const ganttValues = memberDateIdHeaders.map(memberDateId => {
+      if (ganttValueMap.has(memberDateId)) {
+        return ganttValueMap.get(memberDateId);
       } else {
         // 空白行の場合は空の配列を返す
         return Array(originalTimeHeadersLength).fill("");
@@ -125,9 +152,9 @@ function splitGanttData(ganttValues, ganttBgs) {
     });
     
     // 背景色も同様に元の順序を保持
-    const ganttBgs = memberDateIdHeaders.map(memberId => {
-      if (ganttBgMap.has(memberId)) {
-        return ganttBgMap.get(memberId);
+    const ganttBgs = memberDateIdHeaders.map(memberDateId => {
+      if (ganttBgMap.has(memberDateId)) {
+        return ganttBgMap.get(memberDateId);
       } else {
         // 空白行の場合は白背景の配列を返す
         return Array(originalTimeHeadersLength).fill("#FFFFFF");
@@ -136,7 +163,13 @@ function splitGanttData(ganttValues, ganttBgs) {
   
           // コンフリクトデータを処理（エラーデータは既に分離済み）
     conflictShiftObjs.forEach((shiftObj) => {
-      const conflictRow = getColumnOrder(CONFLICT_COL_INDEXES).map((key) => shiftObj[key]);
+      const conflictRow = getColumnOrder(CONFLICT_COL_INDEXES).map((key) => {
+        // startTimeとendTimeはh:mm形式の文字列に変換
+        if (key === 'startTime' || key === 'endTime') {
+          return formatTimeToHHMM(shiftObj[key]);
+        }
+        return shiftObj[key];
+      });
       conflictData.push(conflictRow);
     });
 
@@ -145,6 +178,7 @@ function splitGanttData(ganttValues, ganttBgs) {
       ganttBgs,
       rdbData,
       conflictData,
+      errorData, // エラーデータを追加
     };
   }
   
@@ -158,4 +192,15 @@ function splitGanttData(ganttValues, ganttBgs) {
       }
     }
     return -1;
+  }
+
+  // Dateオブジェクトをh:mm形式の文字列に変換する
+  function formatTimeToHHMM(dateValue) {
+    if (!dateValue || !(dateValue instanceof Date) || isNaN(dateValue.getTime())) {
+      return "";
+    }
+    
+    const hours = dateValue.getHours().toString().padStart(2, '0');
+    const minutes = dateValue.getMinutes().toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
   }

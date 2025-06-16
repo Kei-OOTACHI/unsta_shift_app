@@ -93,29 +93,25 @@ function buildTimescaleArray(startTime, endTime, interval) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
 
   // 開始時刻と終了時刻をDateオブジェクトに変換
-  const start = new Date();
-  const end = new Date();
+  const createTimeObject = (timeStr) => {
+    const [hours, minutes] = timeStr.split(":").map(Number);
+    const date = new Date(Date.UTC(1970, 0, 1, hours, minutes, 0, 0)); // UTCでDateオブジェクトを作成
+    return date;
+  };
 
-  // 開始時刻を設定
-  const startParts = startTime.split(":");
-  start.setHours(parseInt(startParts[0]));
-  start.setMinutes(parseInt(startParts[1]));
-
-  // 終了時刻を設定
-  const endParts = endTime.split(":");
-  end.setHours(parseInt(endParts[0]));
-  end.setMinutes(parseInt(endParts[1]));
+  const start = createTimeObject(startTime);
+  const end = createTimeObject(endTime);
 
   // 時間間隔を分に変換
   const intervalMinutes = parseInt(interval);
 
   // 時刻を格納する配列を作成
   const timeValues = [];
-  let currentTime = new Date(start);
+  let currentTime = start;
 
   // 時刻を配列に追加
   while (currentTime <= end) {
-    const timeString = Utilities.formatDate(currentTime, Session.getScriptTimeZone(), "HH:mm");
+    const timeString = Utilities.formatDate(currentTime, "UTC", "HH:mm"); // UTCを指定してフォーマット
     timeValues.push([timeString]); // 2次元配列にするために配列で囲む
 
     // 時間をインクリメント

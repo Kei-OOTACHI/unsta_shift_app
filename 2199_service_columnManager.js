@@ -1,3 +1,10 @@
+const RANGE_NAMES = {
+  RDB_HEADER_ROW: "登録予定_入力データシート_ヘッダー部分",
+  GANTT_HEADER_ROW: "GCテンプレシート_ヘッダー部分",
+  TIME_SCALE: "GCテンプレシート_時間軸部分",
+  FIRST_DATA: "GCテンプレシート_シフトデータ部分の一番左上のセル",
+};
+
 // 列・行インデックス定数オブジェクト
 let RDB_COL_INDEXES = {
   dept: "",
@@ -41,7 +48,7 @@ let ERROR_COL_INDEXES = {
 
 // 全ての名前付き範囲を確認する関数
 function validateAllNamedRanges() {
-  const requiredRanges = ["rdbHeaderRow", "ganttHeaderRow", "timeScale", "firstData"];
+  const requiredRanges = [RANGE_NAMES.RDB_HEADER_ROW, RANGE_NAMES.GANTT_HEADER_ROW, RANGE_NAMES.TIME_SCALE, RANGE_NAMES.FIRST_DATA];
 
   try {
     for (const rangeName of requiredRanges) {
@@ -79,15 +86,17 @@ function validateNamedRange(rangeName) {
     SpreadsheetApp.flush(); // 変更を即座に反映
 
     const message =
-      `現在選択されている範囲が「${rangeName}」の名前付き範囲として実行して問題ないですか？\n\n` +
-      `修正したい場合は「いいえ」を選択し、メニューバーの「データ」>「名前付き範囲」から設定を修正してください。`;
+      `範囲「${rangeName}」は現在選択されている範囲で問題ないですか？
+
+      修正したい場合は「いいえ」を選択し、メニューバーの「データ」>「名前付き範囲」から設定を修正してください。`;
 
     const response = Browser.msgBox("名前付き範囲の確認", message, Browser.Buttons.YES_NO);
 
     if (response === "no") {
       const retryMessage =
-        `「いいえ」が選択されました。\n\n` +
-        `メニューバーの「データ」>「名前付き範囲」から範囲「${rangeName}」の設定を修正後、スクリプトを再実行してください。`;
+        `「いいえ」が選択されました。
+        
+        メニューバーの「データ」>「名前付き範囲」から範囲「${rangeName}」の設定を修正後、スクリプトを再実行してください。`;
 
       Browser.msgBox("名前付き範囲の修正", retryMessage, Browser.Buttons.OK);
       throw new Error(`処理を中止します: 名前付き範囲「${rangeName}」の修正が必要です`);
@@ -106,7 +115,7 @@ function initializeColumnIndexes() {
 
   try {
     // RDB_COL_INDEXESの設定
-    const rdbHeaderRowRange = ss.getRangeByName("rdbHeaderRow");
+    const rdbHeaderRowRange = ss.getRangeByName(RANGE_NAMES.RDB_HEADER_ROW);
     if (rdbHeaderRowRange) {
       const headerValues = rdbHeaderRowRange.getValues()[0]; // 1行目のみ取得
       const startCol = rdbHeaderRowRange.getColumn() - 1; // 0-indexed配列用に-1
@@ -114,12 +123,12 @@ function initializeColumnIndexes() {
       if (headerValues.some((value) => !RDB_COL_INDEXES.hasOwnProperty(value))) {
         const unknownValues = headerValues.filter((value) => !RDB_COL_INDEXES.hasOwnProperty(value));
         const message =
-          `rdbHeaderRowに不要な見出し「${unknownValues.join("、")}」が含まれています。\n\n` +
-          `不要な見出しを削除してメニューバーの「データ」>「名前付き範囲」から範囲「rdbHeaderRow」を選びなおしてください。\n\n` +
-          `不要な見出しを削除したらスクリプトを再実行してください。`;
+          `範囲「${RANGE_NAMES.RDB_HEADER_ROW}」に不要な見出し「${unknownValues.join("、")}」が含まれています。
+          不要な見出しを削除してメニューバーの「データ」>「名前付き範囲」から範囲「${RANGE_NAMES.RDB_HEADER_ROW}」を選びなおしてください。
+          不要な見出しを削除したらスクリプトを再実行してください。`;
 
-        Browser.msgBox("rdbHeaderRowの確認", message, Browser.Buttons.OK);
-        throw new Error("処理を中止します: rdbHeaderRowの設定に問題があります。");
+        Browser.msgBox(`範囲「${RANGE_NAMES.RDB_HEADER_ROW}」の確認`, message, Browser.Buttons.OK);
+        throw new Error(`処理を中止します: 範囲「${RANGE_NAMES.RDB_HEADER_ROW}」の設定に問題があります。`);
       }
 
       Object.keys(RDB_COL_INDEXES).forEach((key) => {
@@ -127,11 +136,11 @@ function initializeColumnIndexes() {
 
         if (colIndex === -1) {
           const message =
-            `「${key}」がrdbHeaderRowに含まれていません。\n\n` +
-            `メニューバーの「データ」>「名前付き範囲」から範囲「rdbHeaderRow」を選びなおしてください。`;
+            `「${key}」が範囲「${RANGE_NAMES.RDB_HEADER_ROW}」に含まれていません。
+            メニューバーの「データ」>「名前付き範囲」から範囲「${RANGE_NAMES.RDB_HEADER_ROW}」を選びなおしてください。`;
 
-          Browser.msgBox("rdbHeaderRowの確認", message, Browser.Buttons.OK);
-          throw new Error("処理を中止します: rdbHeaderRowの設定に問題があります");
+          Browser.msgBox(`範囲「${RANGE_NAMES.RDB_HEADER_ROW}」の確認`, message, Browser.Buttons.OK);
+          throw new Error(`処理を中止します: 範囲「${RANGE_NAMES.RDB_HEADER_ROW}」の設定に問題があります`);
         } else {
           RDB_COL_INDEXES[key] = startCol + colIndex; // startColが既に0ベースなので、そのまま加算
         }
@@ -139,7 +148,7 @@ function initializeColumnIndexes() {
     }
 
     // GANTT_COL_INDEXESのmemberDateId設定
-    const ganttHeaderRowRange = ss.getRangeByName("ganttHeaderRow");
+    const ganttHeaderRowRange = ss.getRangeByName(RANGE_NAMES.GANTT_HEADER_ROW);
     if (ganttHeaderRowRange) {
       const headerValues = ganttHeaderRowRange.getValues()[0];
       const startCol = ganttHeaderRowRange.getColumn() - 1; // 0-indexed配列用に-1
@@ -149,21 +158,21 @@ function initializeColumnIndexes() {
         GANTT_COL_INDEXES.memberDateId = startCol + memberDateIdIndex; // startColが既に0ベースなので、そのまま加算
       }else{
         const message =
-          `「memberDateId」がganttHeaderRowに含まれていません。\n\n` +
-          `メニューバーの「データ」>「名前付き範囲」から範囲「ganttHeaderRow」を選びなおしてください。`;
-        Browser.msgBox("ganttHeaderRowの確認", message, Browser.Buttons.OK);
-        throw new Error("処理を中止します: ganttHeaderRowの設定に問題があります");
+          `「memberDateId」が範囲「${RANGE_NAMES.GANTT_HEADER_ROW}」に含まれていません。
+          メニューバーの「データ」>「名前付き範囲」から範囲「${RANGE_NAMES.GANTT_HEADER_ROW}」を選びなおしてください。`;
+        Browser.msgBox(`範囲「${RANGE_NAMES.GANTT_HEADER_ROW}」の確認`, message, Browser.Buttons.OK);
+        throw new Error(`処理を中止します: 範囲「${RANGE_NAMES.GANTT_HEADER_ROW}」の設定に問題があります`);
       }
     }
 
     // GANTT_ROW_INDEXESのtimeScale設定
-    const timeScaleRange = ss.getRangeByName("timeScale");
+    const timeScaleRange = ss.getRangeByName(RANGE_NAMES.TIME_SCALE);
     if (timeScaleRange) {
       GANTT_ROW_INDEXES.timeScale = timeScaleRange.getRow() - 1; // 0-indexed配列用に-1
     }
 
     // firstData範囲の設定
-    const firstDataRange = ss.getRangeByName("firstData");
+    const firstDataRange = ss.getRangeByName(RANGE_NAMES.FIRST_DATA);
     if (firstDataRange) {
       GANTT_COL_INDEXES.firstData = firstDataRange.getColumn() - 1; // 0-indexed配列用に-1
       GANTT_ROW_INDEXES.firstData = firstDataRange.getRow() - 1; // 0-indexed配列用に-1

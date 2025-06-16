@@ -10,9 +10,14 @@
  */
 function getAllGanttSeetDataAndGrpBySheetName(ganttSs) {
     const sheets = ganttSs.getSheets();
+    const ganttSsName = ganttSs.getName();
   
     return sheets.reduce((acc, sheet) => {
       const sheetName = sheet.getName();
+      
+      // 処理中のシート名をトーストメニューで通知
+      SpreadsheetApp.getActive().toast(`ガントチャート「${ganttSsName}」のシート「${sheetName}」のデータを取得中...`, "進捗状況");
+
       const { values, backgrounds } = getGanttSeetData(sheet);
   
       // シート名をキーにしてデータを格納

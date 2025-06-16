@@ -1,8 +1,8 @@
 function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateIdHeaders, rdbData, deptName) {
-    // memberIdをキーとする時間枠データのマップを作成（ガントチャートのデータ）
+    // memberDateIdをキーとする時間枠データのマップを作成（ガントチャートのデータ）
     const { validShiftsMap: shiftsFromGanttMap, errorShifts: ganttErrorShifts } = gantt2dAryToMap(ganttValue, ganttBg, timeHeaders, memberDateIdHeaders, deptName);
   
-    // RDBからのデータもmemberIdをキー、時間枠をマップとして変換
+    // RDBからのデータもmemberDateIdをキー、時間枠をマップとして変換
     const shiftsFromRdbMap = rdb2dAryToMap(rdbData, timeHeaders);
   
     // 重複検出と解決
@@ -20,9 +20,9 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
     };
   }
   
-  // ガントチャートデータをmemberIdをキーとするマップに変換
+  // ガントチャートデータをmemberDateIdをキーとするマップに変換
   function gantt2dAryToMap(ganttValue, ganttBg, timeHeaders, memberDateIdHeaders, deptName) {
-    // memberIdをキーとし、時間ごとのシフト情報を格納するマップ
+    // memberDateIdをキーとし、時間ごとのシフト情報を格納するマップ
     const shiftsMap = new Map();
     const errorShifts = [];
   
@@ -30,12 +30,12 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
     for (let i = 0; i < ganttValue.length; i++) {
       const row = ganttValue[i];
       const bgRow = ganttBg[i];
-      const memberId = memberDateIdHeaders[i];
+      const memberDateId = memberDateIdHeaders[i];
       const errorMessages = [];
   
-      // memberIdのバリデーション
-      if (!memberId || memberId.toString().trim() === "") {
-        // memberIdが無効な場合、この行にシフトデータがあるかチェック
+      // memberDateIdのバリデーション
+      if (!memberDateId || memberDateId.toString().trim() === "") {
+        // memberDateIdが無効な場合、この行にシフトデータがあるかチェック
         const hasShiftData = row.some(cell => cell !== "" && cell !== null && cell !== undefined);
         if (hasShiftData) {
           errorMessages.push("memberDateIdが空または無効です");
@@ -52,7 +52,7 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
           dept: deptName,
           background: "",
           source: "Gantt",
-          memberDateId: memberId || "",
+          memberDateId: memberDateId || "",
           startTime: "",
           endTime: "",
           errorMessage: errorMessages.join("、")
@@ -62,12 +62,12 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
       }
 
       // このメンバーのマップがなければ初期化
-      if (!shiftsMap.has(memberId)) {
-        shiftsMap.set(memberId, new Map());
+      if (!shiftsMap.has(memberDateId)) {
+        shiftsMap.set(memberDateId, new Map());
       }
   
       // このメンバーの時間枠ごとのマップ
-      const memberTimeMap = shiftsMap.get(memberId);
+      const memberTimeMap = shiftsMap.get(memberDateId);
   
       let j = 0;
       while (j < row.length) {
@@ -103,7 +103,7 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
               dept: deptName,
               background: cellBg,
               source: "Gantt",
-              memberDateId: memberId,
+              memberDateId: memberDateId,
               startTime: "",
               endTime: "",
               errorMessage: "時間範囲が無効です（timeHeadersの範囲外）"
@@ -122,7 +122,7 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
               dept: deptName,
               background: cellBg,
               source: "Gantt",
-              memberDateId: memberId,
+              memberDateId: memberDateId,
               startTime: timeHeaders[startCol],
               endTime: timeHeaders[endCol + 1],
               errorMessage: "startTimeまたはendTimeが無効な日付です"
@@ -138,7 +138,7 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
               dept: deptName,
               background: cellBg,
               source: "Gantt",
-              memberDateId: memberId,
+              memberDateId: memberDateId,
               startTime,
               endTime,
               errorMessage: "startTimeがendTime以降の時刻です"
@@ -153,11 +153,11 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
             dept: deptName,
             background: cellBg,
             source: "Gantt",
-            memberDateId: memberId,
+            memberDateId: memberDateId,
             startTime,
             endTime,
             // 元のシフト識別用のID
-            shiftId: `gantt_${memberId}_${startTime.getTime()}_${endTime.getTime()}_${cellValue}`,
+            shiftId: `gantt_${memberDateId}_${startTime.getTime()}_${endTime.getTime()}_${cellValue}`,
           };
   
           // 時間範囲内の各時間スロットに値を設定（同じシフトIDを持たせる）
@@ -174,7 +174,7 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
     return { validShiftsMap: shiftsMap, errorShifts };
   }
   
-  // RDBデータをmemberIdをキーとするマップに変換
+  // RDBデータをmemberDateIdをキーとするマップに変換
   function rdb2dAryToMap(rdbData, timeHeaders) {
     const shiftsMap = new Map();
     
@@ -189,21 +189,21 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
     // ヘッダー行をスキップ
     for (let i = 1; i < rdbData.length; i++) {
       const row = rdbData[i];
-      const memberId = row[memberDateIdIndex];
+      const memberDateId = row[memberDateIdIndex];
       const dept = row[deptIndex];
       const job = row[jobIndex];
-      const startTime = new Date(row[startTimeIndex]);
-      const endTime = new Date(row[endTimeIndex]);
+      const startTime = parseTimeToDate(row[startTimeIndex]);
+      const endTime = parseTimeToDate(row[endTimeIndex]);
       const background = row[backgroundIndex];
       
-      if (!memberId) continue;
+      if (!memberDateId) continue;
       
       // このメンバーのマップがなければ初期化
-      if (!shiftsMap.has(memberId)) {
-        shiftsMap.set(memberId, new Map());
+      if (!shiftsMap.has(memberDateId)) {
+        shiftsMap.set(memberDateId, new Map());
       }
       
-      const memberTimeMap = shiftsMap.get(memberId);
+      const memberTimeMap = shiftsMap.get(memberDateId);
       
       // シフト全体の情報を作成
       const shiftInfo = {
@@ -211,11 +211,11 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
         dept,
         background,
         source: "RDB",
-        memberDateId: memberId,
+        memberDateId: memberDateId,
         startTime,
         endTime,
         // 元のシフト識別用のID
-        shiftId: `rdb_${memberId}_${startTime.getTime()}_${endTime.getTime()}_${job}`
+        shiftId: `rdb_${memberDateId}_${startTime.getTime()}_${endTime.getTime()}_${job}`
       };
       
       // 該当する時間範囲内の各時間スロットに値を設定（同じシフトIDを持たせる）
@@ -230,22 +230,50 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
     return shiftsMap;
   }
   
+  // h:mm形式の時刻文字列またはDateオブジェクトを正しいDateオブジェクトに変換する
+  function parseTimeToDate(timeValue) {
+    if (timeValue instanceof Date) {
+      // 既にDateオブジェクトの場合はそのまま返す
+      return timeValue;
+    }
+    
+    if (typeof timeValue === 'string') {
+      // h:mmまたはhh:mm形式の文字列の場合
+      const timeMatch = timeValue.match(/^(\d{1,2}):(\d{2})$/);
+      if (timeMatch) {
+        const hours = parseInt(timeMatch[1], 10);
+        const minutes = parseInt(timeMatch[2], 10);
+        
+        // 1970年1月1日00:00分のDateオブジェクトを生成
+        const date = new Date(1970, 0, 1, hours, minutes, 0, 0);
+        return date;
+      }
+    }
+    
+    // その他の場合は通常のDateコンストラクタを試す
+    const date = new Date(timeValue);
+    if (isNaN(date.getTime())) {
+      throw new Error(`無効な時刻形式です: ${timeValue}`);
+    }
+    return date;
+  }
+  
   // マップを使用した重複検出と解決
   function detectConflictsWithMap(ganttMap, rdbMap, timeHeaders) {
     const validShiftsMap = new Map();
     const conflictShiftIds = new Set(); // 重複したシフトのIDを保存
-    const allMemberIds = new Set([...ganttMap.keys(), ...rdbMap.keys()]);
+    const allmemberDateIds = new Set([...ganttMap.keys(), ...rdbMap.keys()]);
   
     // 各メンバーについて処理
-    for (const memberId of allMemberIds) {
-      const ganttTimeMap = ganttMap.get(memberId) || new Map();
-      const rdbTimeMap = rdbMap.get(memberId) || new Map();
+    for (const memberDateId of allmemberDateIds) {
+      const ganttTimeMap = ganttMap.get(memberDateId) || new Map();
+      const rdbTimeMap = rdbMap.get(memberDateId) || new Map();
   
       // このメンバーの有効なシフト情報を保持するマップ
-      if (!validShiftsMap.has(memberId)) {
-        validShiftsMap.set(memberId, new Map());
+      if (!validShiftsMap.has(memberDateId)) {
+        validShiftsMap.set(memberDateId, new Map());
       }
-      const memberValidMap = validShiftsMap.get(memberId);
+      const memberValidMap = validShiftsMap.get(memberDateId);
   
       // 同一メンバー内の重複シフトを追跡するセット
       const conflictingShiftIds = new Set();
@@ -282,6 +310,16 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
           }
         }
       }
+
+      // コンフリクトしたシフトの時間スロットをvalidShiftsMapから削除
+      for (const conflictShiftId of conflictingShiftIds) {
+        // memberValidMapから該当するシフトIDの時間スロットを全て削除
+        for (const [timeKey, shiftInfo] of memberValidMap.entries()) {
+          if (shiftInfo.shiftId === conflictShiftId) {
+            memberValidMap.delete(timeKey);
+          }
+        }
+      }
   
       // コンフリクトシフトIDを全体のセットに追加
       for (const id of conflictingShiftIds) {
@@ -293,7 +331,7 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
     const conflictShiftObjs = [];
   
     // ガントマップから重複シフトを収集
-    for (const [memberId, timeMap] of ganttMap.entries()) {
+    for (const [memberDateId, timeMap] of ganttMap.entries()) {
       const processedShiftIds = new Set();
   
       for (const shiftInfo of timeMap.values()) {
@@ -305,7 +343,7 @@ function convert2dAryToObjsAndJoin(ganttValue, ganttBg, timeHeaders, memberDateI
     }
   
     // RDBマップから重複シフトを収集
-    for (const [memberId, timeMap] of rdbMap.entries()) {
+    for (const [memberDateId, timeMap] of rdbMap.entries()) {
       const processedShiftIds = new Set();
   
       for (const shiftInfo of timeMap.values()) {

@@ -2,11 +2,11 @@
 // RDB_COL_INDEXES.dept, GANTT_COL_INDEXES.firstData, GANTT_ROW_INDEXES.timeScale等
 
 const SHEET_NAMES = {
-  IN_RDB: "Input",
-  OUT_RDB: "シフトDB",
-  CONFLICT_RDB: "重複データ",
-  ERROR_RDB: "エラーデータ",
-  GANTT_TEMPLATE: "GCテンプレ",
+  IN_RDB: "4.登録予定_入力データ",
+  OUT_RDB: "4.登録済み_出力データ",
+  CONFLICT_RDB: "4.登録失敗_重複データ",
+  ERROR_RDB: "4.登録失敗_エラーデータ",
+  GANTT_TEMPLATE: "1~2.GCテンプレ",
 };
 
 function buildShiftDataMergerMenu(ui) {
@@ -164,8 +164,8 @@ function validateAndSeparateRdbData(rdbData) {
 
     // 必須フィールドのバリデーション（インデックスは0ベース）
     const memberDateId = row[RDB_COL_INDEXES.memberDateId];
-    const startTime = row[RDB_COL_INDEXES.startTime];
-    const endTime = row[RDB_COL_INDEXES.endTime];
+    const startTimeValue = row[RDB_COL_INDEXES.startTime];
+    const endTimeValue = row[RDB_COL_INDEXES.endTime];
     const dept = row[RDB_COL_INDEXES.dept];
 
     // memberDateIdのバリデーション
@@ -174,12 +174,18 @@ function validateAndSeparateRdbData(rdbData) {
     }
 
     // startTimeのバリデーション
-    if (!startTime || !(startTime instanceof Date) || isNaN(startTime.getTime())) {
+    let startTime = null;
+    try {
+      startTime = parseTimeToDate(startTimeValue);
+    } catch (error) {
       errorMessages.push("startTimeが無効または空です");
     }
 
     // endTimeのバリデーション
-    if (!endTime || !(endTime instanceof Date) || isNaN(endTime.getTime())) {
+    let endTime = null;
+    try {
+      endTime = parseTimeToDate(endTimeValue);
+    } catch (error) {
       errorMessages.push("endTimeが無効または空です");
     }
 
@@ -242,10 +248,24 @@ function processDepartment(deptKey, rdbData, ganttData) {
       ganttBgs: deptGanttBgs,
       rdbData: deptRdbData,
       conflictData: deptConflictData,
+      errorData: transformerErrorData,
     } = convertObjsTo2dAry(validShiftsMap, conflictShiftObjs, timeHeaders, memberDateIdHeaders);
 
-    // エラーデータを直接変換
-    const deptErrorData = errorShifts.map((shiftObj) => getColumnOrder(ERROR_COL_INDEXES).map((key) => shiftObj[key]));
+    // エラーデータを統合（元のerrorShiftsとtransformerからのエラーデータ）
+    const deptErrorData = [
+      // 元のエラーシフトデータ（ガントチャートからのエラー）
+      ...errorShifts.map((shiftObj) => 
+        getColumnOrder(ERROR_COL_INDEXES).map((key) => {
+          // startTimeとendTimeはh:mm形式の文字列に変換
+          if (key === 'startTime' || key === 'endTime') {
+            return formatTimeToHHMM(shiftObj[key]);
+          }
+          return shiftObj[key];
+        })
+      ),
+      // convertObjsTo2dAryで検出されたエラーデータ（memberDateIdが見つからない）
+      ...transformerErrorData
+    ];
 
     // ヘッダー情報も含めて返す（新しいシート作成用）
     return {
@@ -288,33 +308,36 @@ function setDataToSheets(
   try {
     // データベース、コンフリクト、エラーシートのクリアと更新
     try {
-      OutMergedRdbSheet.clear();
+      OutMergedRdbSheet.getDataRange().clearContent();
       rdbData.unshift(getColumnOrder(RDB_COL_INDEXES));
       OutMergedRdbSheet.getRange(1, 1, rdbData.length, rdbData[0].length).setValues(rdbData);
       console.log(`${SHEET_NAMES.OUT_RDB}シートの更新が完了しました`);
+      SpreadsheetApp.getActive().toast(`${SHEET_NAMES.OUT_RDB}シートの更新が完了しました`, "更新完了");
     } catch (error) {
       failedSheets.push(`${SHEET_NAMES.OUT_RDB}シート`);
       throw error;
     }
 
     try {
-      OutConflictRdbSheet.clear();
+      OutConflictRdbSheet.getDataRange().clearContent();
       conflictData.unshift(getColumnOrder(CONFLICT_COL_INDEXES));
       OutConflictRdbSheet.getRange(1, 1, conflictData.length, conflictData[0].length).setValues(conflictData);
       console.log(`${SHEET_NAMES.CONFLICT_RDB}シートの更新が完了しました`);
+      SpreadsheetApp.getActive().toast(`${SHEET_NAMES.CONFLICT_RDB}シートの更新が完了しました`, "更新完了");
     } catch (error) {
       failedSheets.push(`${SHEET_NAMES.CONFLICT_RDB}シート`);
       throw error;
     }
 
     try {
-      OutErrorRdbSheet.clear();
+      OutErrorRdbSheet.getDataRange().clearContent();
       // エラーデータの書き込み（Ganttに存在しない部署のRDBデータ）
       if (errorData.length > 0) {
         errorData.unshift(getColumnOrder(ERROR_COL_INDEXES));
         OutErrorRdbSheet.getRange(1, 1, errorData.length, errorData[0].length).setValues(errorData);
       }
       console.log(`${SHEET_NAMES.ERROR_RDB}シートの更新が完了しました`);
+      SpreadsheetApp.getActive().toast(`${SHEET_NAMES.ERROR_RDB}シートの更新が完了しました`, "更新完了");
     } catch (error) {
       failedSheets.push(`${SHEET_NAMES.ERROR_RDB}シート`);
       throw error;
@@ -378,6 +401,7 @@ function setDataToSheets(
       }
 
       console.log(`ガントチャート「${ganttSsName}」のシート「${sheetName}」の更新が完了しました`);
+      SpreadsheetApp.getActive().toast(`ガントチャート「${ganttSsName}」のシート「${sheetName}」の更新が完了しました`, "更新完了");
     } catch (error) {
       showRestorePrompt(
         [`シート「${sheetName}」`],
@@ -389,7 +413,6 @@ function setDataToSheets(
     }
   }
 }
-
 
 // エラー発生時の復元案内を表示する関数
 function showRestorePrompt(failedSheets, targetDescription, startTime, error) {
@@ -426,4 +449,43 @@ function showRestorePrompt(failedSheets, targetDescription, startTime, error) {
   console.error(`処理開始時刻: ${formattedStartTime}`);
   console.error(`エラー: ${error.message}`);
   console.error("Stack trace:", error.stack);
+}
+
+// Dateオブジェクトをh:mm形式の文字列に変換する
+function formatTimeToHHMM(dateValue) {
+  if (!dateValue || !(dateValue instanceof Date) || isNaN(dateValue.getTime())) {
+    return "";
+  }
+  
+  const hours = dateValue.getHours().toString().padStart(2, '0');
+  const minutes = dateValue.getMinutes().toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+// h:mm形式の時刻文字列またはDateオブジェクトを正しいDateオブジェクトに変換する
+function parseTimeToDate(timeValue) {
+  if (timeValue instanceof Date) {
+    // 既にDateオブジェクトの場合はそのまま返す
+    return timeValue;
+  }
+  
+  if (typeof timeValue === 'string') {
+    // h:mmまたはhh:mm形式の文字列の場合
+    const timeMatch = timeValue.match(/^(\d{1,2}):(\d{2})$/);
+    if (timeMatch) {
+      const hours = parseInt(timeMatch[1], 10);
+      const minutes = parseInt(timeMatch[2], 10);
+      
+      // 1970年1月1日00:00分のDateオブジェクトを生成
+      const date = new Date(1970, 0, 1, hours, minutes, 0, 0);
+      return date;
+    }
+  }
+  
+  // その他の場合は通常のDateコンストラクタを試す
+  const date = new Date(timeValue);
+  if (isNaN(date.getTime())) {
+    throw new Error(`無効な時刻形式です: ${timeValue}`);
+  }
+  return date;
 }
