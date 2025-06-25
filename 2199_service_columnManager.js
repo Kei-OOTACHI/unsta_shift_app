@@ -1,8 +1,8 @@
 const RANGE_NAMES = {
   RDB_HEADER_ROW: "登録予定_入力データシート_ヘッダー部分",
-  GANTT_HEADER_ROW: "GCテンプレシート_ヘッダー部分",
-  TIME_SCALE: "GCテンプレシート_時間軸部分",
-  FIRST_DATA: "GCテンプレシート_シフトデータ部分の一番左上のセル",
+  GANTT_HEADER_ROW: "シフト表テンプレシート_ヘッダー部分",
+  TIME_SCALE: "シフト表テンプレシート_時間軸部分",
+  FIRST_DATA: "シフト表テンプレシート_シフトデータ部分の一番左上のセル",
 };
 
 // 列・行インデックス定数オブジェクト

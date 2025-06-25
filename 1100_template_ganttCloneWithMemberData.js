@@ -92,10 +92,10 @@ function handleGanttDialogSubmit(formData, context) {
     Logger.log("スクリプトプロパティに設定を保存しました");
   } catch (error) {
     // 詳細なエラー情報をログに出力
-    Logger.log("=== handleGanttDialogSubmit エラー詳細情報 ===");
-    Logger.log("エラーメッセージ:", error.message);
-    Logger.log("エラー名:", error.name);
-    Logger.log("スタックトレース:", error.stack);
+    // Logger.log("=== handleGanttDialogSubmit エラー詳細情報 ===");
+    // Logger.log("エラーメッセージ:", error.message);
+    // Logger.log("エラー名:", error.name);
+    // Logger.log("スタックトレース:", error.stack);
     
     console.error("=== handleGanttDialogSubmit エラー詳細情報 ===");
     console.error("エラーメッセージ:", error.message);
@@ -135,13 +135,51 @@ function createGanttChartsWithMemberData(targetUrl, daysPerMember, insertBlankLi
     Logger.log("メンバーIDを生成中...");
     const memberDataWithIds = generateMemberIds(memberData);
 
-    // 4.1. メンバー情報シートにmemberIdを書き戻し
+    // 4.1. メンバーデータの必須項目検証
+    Logger.log("メンバーデータの必須項目を検証中...");
+    const validatedMemberData = validateMemberData(memberDataWithIds);
+
+    // 4.2. メンバー情報シートにmemberIdを書き戻し
     Logger.log("メンバー情報シートにmemberIdを書き戻し中...");
-    updateMemberDataSheetWithIds(activeSpreadsheet, memberDataWithIds);
+    updateMemberDataSheetWithIds(activeSpreadsheet, validatedMemberData);
+
+    // 4.3. エラー行の確認と通知
+    const errorRows = validatedMemberData.slice(1).filter((row, index) => {
+      const memberIdIndex = validatedMemberData[0].indexOf(COL_HEADER_NAMES.MEMBER_ID);
+      const memberId = row[memberIdIndex];
+      return memberId && memberId.includes("エラー：");
+    });
+
+    if (errorRows.length > 0) {
+      // エラーの種類別に集計
+      const emailErrors = errorRows.filter(row => {
+        const memberIdIndex = validatedMemberData[0].indexOf(COL_HEADER_NAMES.MEMBER_ID);
+        const memberId = row[memberIdIndex];
+        return memberId && memberId.includes("emailが記入されていない");
+      });
+      
+      const deptErrors = errorRows.filter(row => {
+        const memberIdIndex = validatedMemberData[0].indexOf(COL_HEADER_NAMES.MEMBER_ID);
+        const memberId = row[memberIdIndex];
+        return memberId && memberId.includes("deptが記入されていない");
+      });
+
+      let errorMessage = `${errorRows.length}行で必須項目が不足しているため、ガントチャート作成から除外されます。\n`;
+      if (emailErrors.length > 0) {
+        errorMessage += `- email未記入: ${emailErrors.length}行\n`;
+      }
+      if (deptErrors.length > 0) {
+        errorMessage += `- dept未記入: ${deptErrors.length}行\n`;
+      }
+      errorMessage += `該当行にエラーメッセージを記入しました。`;
+      
+      Logger.log(errorMessage);
+      // ui.alert("注意", errorMessage, ui.ButtonSet.OK);
+    }
 
     // 5. 部署ごとにグループ化してオブジェクト形式に変換
     Logger.log("部署ごとにメンバーデータをグループ化中...");
-    const groupedMemberData = groupMemberDataByDept(memberDataWithIds);
+    const groupedMemberData = groupMemberDataByDept(validatedMemberData);
 
     // 6. ガントチャートヘッダー取得
     Logger.log("ガントチャートヘッダーを取得中...");
@@ -178,12 +216,6 @@ function createGanttChartsWithMemberData(targetUrl, daysPerMember, insertBlankLi
     Logger.log(successMessage);
     ui.alert(successMessage);
   } catch (error) {
-    // 詳細なエラー情報をログに出力
-    Logger.log("=== エラー詳細情報 ===");
-    Logger.log("エラーメッセージ:", error.message);
-    Logger.log("エラー名:", error.name);
-    Logger.log("スタックトレース:", error.stack);
-    Logger.log("エラーオブジェクト全体:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
     
     console.error("=== エラー詳細情報 ===");
     console.error("エラーメッセージ:", error.message);
@@ -217,14 +249,9 @@ function groupMemberDataByDept(memberData) {
   for (let i = 1; i < memberData.length; i++) {
     const row = memberData[i];
     const dept = row[deptIndex];
-    if (!dept) continue;
-
-    if (!groupedData[dept]) {
-      groupedData[dept] = {
-        headers: headers.slice(),
-        members: new Map()
-      };
-      Logger.log(`部署「${dept}」のグループを作成しました`);
+    
+    if (!dept || (typeof dept === 'string' && dept.trim() === '')) {
+      continue;
     }
 
     // メンバー行をオブジェクトに変換（一度のループで処理）
@@ -233,34 +260,54 @@ function groupMemberDataByDept(memberData) {
       return obj;
     }, {});
 
-    // メンバーIDが存在するかチェック
-    if (!memberObj[COL_HEADER_NAMES.MEMBER_ID]) {
-      Logger.log(`警告: 行${i}のメンバーIDが空です:`, JSON.stringify(memberObj));
-    } else {
-      Logger.log(`部署「${dept}」にメンバー「${memberObj[COL_HEADER_NAMES.MEMBER_ID]}」を追加`);
+    // 元の行番号を保存（デバッグ用）
+    memberObj._originalRowIndex = i;
+
+    // memberIdがエラーメッセージかチェック
+    const memberId = memberObj[COL_HEADER_NAMES.MEMBER_ID];
+    
+    if (memberId && memberId.includes("エラー：")) {
+      Logger.log(`行${i + 1}をスキップ: ${memberId}`);
+      continue; // エラーメッセージが含まれる行はスキップ
     }
 
-    groupedData[dept].members.set(i, memberObj);
+    // メンバーIDが存在するかチェック
+    if (!memberId || (typeof memberId === 'string' && memberId.trim() === '')) {
+      Logger.log(`警告: 行${i + 1}のメンバーIDが空です:`, JSON.stringify(memberObj));
+      continue;
+    }
+
+    if (!groupedData[dept]) {
+      groupedData[dept] = {
+        headers: headers.slice(),
+        members: [] // 順序を保持するために配列を使用
+      };
+      Logger.log(`部署「${dept}」のグループを作成しました`);
+    }
+
+    Logger.log(`部署「${dept}」にメンバー「${memberId}」を追加`);
+
+    // 配列にプッシュして順序を保持
+    groupedData[dept].members.push(memberObj);
   }
 
   // 各部署のメンバー数をログ出力
   Object.keys(groupedData).forEach(dept => {
-    Logger.log(`部署「${dept}」のメンバー数: ${groupedData[dept].members.size}`);
+    Logger.log(`部署「${dept}」のメンバー数: ${groupedData[dept].members.length}`);
   });
 
   // メンバーデータの内容を確認
   Logger.log("=== メンバーデータの内容確認 ===");
   Object.keys(groupedData).forEach(dept => {
-    const members = Array.from(groupedData[dept].members.values());
+    const members = groupedData[dept].members;
     Logger.log(`部署「${dept}」のメンバー数:`, members.length);
     members.forEach((member, index) => {
-      Logger.log(`部署「${dept}」のメンバー${index}:`, JSON.stringify(member));
+      Logger.log(`部署「${dept}」のメンバー${index} (元の行${member._originalRowIndex}):`, JSON.stringify(member));
       if (!member[COL_HEADER_NAMES.MEMBER_ID]) {
         Logger.log(`警告: 部署「${dept}」のメンバー${index}にmemberIdが存在しません`);
       }
     });
   });
-
   return groupedData;
 }
 
@@ -317,35 +364,92 @@ function createDeptGanttSheet(
     hasHeaders: !!deptData.headers,
     headersLength: deptData.headers ? deptData.headers.length : 0,
     hasMembers: !!deptData.members,
-    membersSize: deptData.members ? deptData.members.size : 0
+    membersLength: deptData.members ? deptData.members.length : 0
   }));
   
   // メンバーデータの詳細をログ出力
   if (deptData.members) {
-    const membersList = Array.from(deptData.members.values());
+    const membersList = deptData.members;
     Logger.log(`部署「${dept}」のメンバー一覧:`);
     membersList.forEach((member, index) => {
-      Logger.log(`  メンバー${index}: ${JSON.stringify(member)}`);
+      Logger.log(`  メンバー${index} (元の行${member._originalRowIndex}): ${JSON.stringify(member)}`);
     });
   }
   
   const targetSs = SpreadsheetApp.openByUrl(targetUrl);
   const newSheet = createDeptSheet(targetSs, ganttTemplateSheet, dept);
   
+  // 保護する列のインデックスを取得
+  const preserveColumnIndices = PRESERVE_TEMPLATE_COLUMNS.map(columnName => ({
+    name: columnName,
+    index: ganttHeaders.indexOf(columnName)
+  })).filter(col => col.index !== -1);
+  
+  Logger.log(`保護する列: ${preserveColumnIndices.map(col => `${col.name}(${col.index})`).join(', ')}`);
+  
   // memberDateId生成とデータ準備
   Logger.log(`部署「${dept}」のガントデータを準備中...`);
   const preparedData = prepareGanttData(deptData, ganttHeaders, commonHeaders, daysPerMember, insertBlankLine);
   Logger.log(`部署「${dept}」の準備されたデータ行数: ${preparedData.length}`);
 
-  // データのセット
+  // ガントチャート範囲の取得
   const ganttRange = newSheet.getRange(ganttHeaderRangeA1);
+  const dataStartRow = ganttRange.getRow() + 1; // ヘッダー行の次から
+  const dataStartCol = ganttRange.getColumn();
+  
+  // 保護する列の値を事前に保存
+  const originalColumnValues = {};
+  if (preserveColumnIndices.length > 0 && preparedData.length > 0) {
+    Logger.log("GANTT_TEMPLATEから保護対象列の値を保存中...");
+    
+    preserveColumnIndices.forEach(col => {
+      // 新しいシートでの対象列の範囲を取得（テンプレートから複製された値）
+      const columnRange = newSheet.getRange(
+        dataStartRow,
+        dataStartCol + col.index,
+        preparedData.length,
+        1
+      );
+      const columnValues = columnRange.getValues();
+      originalColumnValues[col.name] = columnValues;
+      
+      Logger.log(`${col.name}列の値を保存しました: ${columnValues.length}行`);
+      Logger.log(`保存された${col.name}列の最初の5行:`, columnValues.slice(0, 5).map(row => row[0]));
+      
+      // 列の値が空の場合の警告
+      const emptyCount = columnValues.filter(row => !row[0]).length;
+      if (emptyCount > 0) {
+        Logger.log(`警告: ${col.name}列の${emptyCount}行が空です`);
+      }
+    });
+  }
+
+  // メンバーデータをセット（保護対象列も一時的に上書き）
   const targetRange = newSheet.getRange(
-    ganttRange.getRow() + 1, // ヘッダー行の次から
-    ganttRange.getColumn(),
+    dataStartRow,
+    dataStartCol,
     preparedData.length,
     ganttHeaders.length
   );
   targetRange.setValues(preparedData);
+  
+  // 保護対象列の値を復元
+  if (preserveColumnIndices.length > 0 && Object.keys(originalColumnValues).length > 0) {
+    Logger.log("保護対象列の値を復元中...");
+    
+    preserveColumnIndices.forEach(col => {
+      if (originalColumnValues[col.name]) {
+        const columnRange = newSheet.getRange(
+          dataStartRow,
+          dataStartCol + col.index,
+          preparedData.length,
+          1
+        );
+        columnRange.setValues(originalColumnValues[col.name]);
+        Logger.log(`${col.name}列の値を復元しました`);
+      }
+    });
+  }
   
   Logger.log(`部署「${dept}」のシート作成が完了しました`);
 }
@@ -363,7 +467,7 @@ function prepareGanttData(deptData, ganttHeaders, commonHeaders, daysPerMember, 
   const headerIndices = prepareHeaderIndices(deptData.headers, ganttHeaders);
   const memberDateIdIndex = headerIndices.gantt[COL_HEADER_NAMES.MEMBER_DATE_ID];
   const memberIdIndex = headerIndices.gantt[COL_HEADER_NAMES.MEMBER_ID];
-  const members = Array.from(deptData.members.values());
+  const members = deptData.members; // 既に配列なのでそのまま使用
   
   Logger.log(`ガントヘッダーインデックス: memberDateId=${memberDateIdIndex}, memberId=${memberIdIndex}`);
   
@@ -389,12 +493,14 @@ function prepareGanttData(deptData, ganttHeaders, commonHeaders, daysPerMember, 
       Logger.log(`メンバーID「${memberId}」をガントチャート行に設定`);
     }
     
+    // メンバーデータをコピー（memberDateIdと保護対象列は除外）
+    const excludeHeaders = [COL_HEADER_NAMES.MEMBER_DATE_ID, ...PRESERVE_TEMPLATE_COLUMNS];
     copyMemberDataToGanttRow(
       commonHeaders,
       headerIndices,
       baseRow,
       memberObj,
-      [COL_HEADER_NAMES.MEMBER_DATE_ID, COL_HEADER_NAMES.DATE]
+      excludeHeaders
     );
     
     return baseRow;
@@ -412,10 +518,15 @@ function prepareGanttData(deptData, ganttHeaders, commonHeaders, daysPerMember, 
   let currentMemberIndex = 0;
   let dayCounter = 1;
   
-  return allMemberRows.map(row => {
+  return allMemberRows.map((row, rowIndex) => {
     if (row.every(cell => cell === "")) {
-      currentMemberIndex++;
+      // 空白行では currentMemberIndex を増加させない（メンバー処理完了時に既に増加済み）
       dayCounter = 1;
+      return row;
+    }
+    
+    if (currentMemberIndex >= members.length) {
+      Logger.log(`警告: 無効なメンバーインデックス ${currentMemberIndex} (メンバー数: ${members.length})`);
       return row;
     }
     
@@ -426,23 +537,31 @@ function prepareGanttData(deptData, ganttHeaders, commonHeaders, daysPerMember, 
     }
     
     const memberId = currentMember[COL_HEADER_NAMES.MEMBER_ID];
-    row[memberDateIdIndex] = generateMemberDateId(memberId, `day${dayCounter}`);
+    const memberDateId = generateMemberDateId(memberId, `day${dayCounter}`);
+    
+    Logger.log(`行${rowIndex}: メンバー${currentMemberIndex} (${memberId}, 元の行${currentMember._originalRowIndex}) の ${dayCounter}日目`);
+    
+    row[memberDateIdIndex] = memberDateId;
     
     // memberIdを各行に展開
     if (memberIdIndex !== undefined) {
       row[memberIdIndex] = memberId;
     }
     
+    // メンバーデータを各行に再コピー（順序を保証するため、保護対象列は除外）
+    const excludeHeaders = [COL_HEADER_NAMES.MEMBER_DATE_ID, ...PRESERVE_TEMPLATE_COLUMNS];
+    copyMemberDataToGanttRow(
+      commonHeaders,
+      headerIndices,
+      row,
+      currentMember,
+      excludeHeaders
+    );
+    
     dayCounter++;
     if (dayCounter > daysPerMember) {
       dayCounter = 1;
       currentMemberIndex++;
-    }
-    
-    // 現在のメンバーインデックスが有効かチェック
-    if (currentMemberIndex >= members.length) {
-      Logger.log(`警告: 無効なメンバーインデックス ${currentMemberIndex} (メンバー数: ${members.length})`);
-      return row;
     }
     
     return row;
@@ -513,5 +632,120 @@ function updateMemberDataSheetWithIds(spreadsheet, memberDataWithIds) {
   } catch (error) {
     Logger.log("メンバー情報シート更新エラー:", error.message);
     console.error("メンバー情報シート更新エラー:", error);
+  }
+}
+
+/**
+ * promptUserForGanttChartInfo関数をデバッグするためのテスト関数
+ * カスタムダイアログからの戻り値をシミュレートして、handleGanttDialogSubmitを直接呼び出す
+ */
+function testPromptUserForGanttChartInfo() {
+  try {
+    Logger.log("=== promptUserForGanttChartInfo テスト関数開始 ===");
+    
+    // ガントチャートテンプレートの範囲選択（実際の関数と同じロジック）
+    validateNamedRange(RANGE_NAMES.GANTT_HEADER_ROW);
+    const ganttHeaderRange = SpreadsheetApp.getActiveSpreadsheet().getRangeByName(RANGE_NAMES.GANTT_HEADER_ROW);
+    
+    // ダミーのフォームデータ（カスタムダイアログから返されるJSONをシミュレート）
+    const dummyFormData = {
+      targetUrl: "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit", // 実際のURLに変更してください
+      daysPerMember: 5,
+      insertBlankLine: true
+    };
+    
+    // ダミーのコンテキストデータ
+    const dummyContext = {
+      ganttHeaderRange: ganttHeaderRange.getA1Notation()
+    };
+    
+    Logger.log("テスト用ダミーデータ:");
+    Logger.log("フォームデータ:", JSON.stringify(dummyFormData));
+    Logger.log("コンテキスト:", JSON.stringify(dummyContext));
+    
+    // 実際のコールバック関数を呼び出し
+    handleGanttDialogSubmit(dummyFormData, dummyContext);
+    
+    Logger.log("=== promptUserForGanttChartInfo テスト関数完了 ===");
+    
+  } catch (error) {
+
+    
+    console.error("=== promptUserForGanttChartInfo テスト関数エラー ===");
+    console.error("エラーメッセージ:", error.message);
+    console.error("エラー名:", error.name);
+    console.error("スタックトレース:", error.stack);
+    console.error("エラーオブジェクト全体:", error);
+    
+    // UIにもエラーを表示
+    SpreadsheetApp.getUi().alert(`テスト関数エラー: ${error.message}\n\n詳細は実行ログを確認してください。`);
+    
+    throw error;
+  }
+}
+
+/**
+ * テスト用：異なるパラメータでのバリエーションテスト
+ */
+function testPromptUserForGanttChartInfoVariations() {
+  const testCases = [
+    {
+      name: "基本ケース",
+      formData: {
+        targetUrl: "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID_1/edit",
+        daysPerMember: 3,
+        insertBlankLine: false
+      }
+    },
+    {
+      name: "空白行挿入ありケース",
+      formData: {
+        targetUrl: "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID_2/edit",
+        daysPerMember: 7,
+        insertBlankLine: true
+      }
+    },
+    {
+      name: "最小日数ケース",
+      formData: {
+        targetUrl: "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID_3/edit",
+        daysPerMember: 1,
+        insertBlankLine: false
+      }
+    }
+  ];
+  
+  Logger.log("=== promptUserForGanttChartInfo バリエーションテスト開始 ===");
+  
+  try {
+    // ガントチャートテンプレートの範囲選択
+    validateNamedRange(RANGE_NAMES.GANTT_HEADER_ROW);
+    const ganttHeaderRange = SpreadsheetApp.getActiveSpreadsheet().getRangeByName(RANGE_NAMES.GANTT_HEADER_ROW);
+    
+    const dummyContext = {
+      ganttHeaderRange: ganttHeaderRange.getA1Notation()
+    };
+    
+    testCases.forEach((testCase, index) => {
+      Logger.log(`--- テストケース ${index + 1}: ${testCase.name} ---`);
+      Logger.log("フォームデータ:", JSON.stringify(testCase.formData));
+      
+      try {
+        handleGanttDialogSubmit(testCase.formData, dummyContext);
+        Logger.log(`テストケース ${index + 1} 完了`);
+      } catch (error) {
+        Logger.log(`テストケース ${index + 1} エラー:`, error.message);
+        console.error(`テストケース ${index + 1} エラー:`, error);
+      }
+    });
+    
+    Logger.log("=== promptUserForGanttChartInfo バリエーションテスト完了 ===");
+    
+  } catch (error) {
+    Logger.log("=== バリエーションテスト全体エラー ===");
+    Logger.log("エラーメッセージ:", error.message);
+    console.error("バリエーションテスト全体エラー:", error);
+    
+    SpreadsheetApp.getUi().alert(`バリエーションテストエラー: ${error.message}\n\n詳細は実行ログを確認してください。`);
   }
 }

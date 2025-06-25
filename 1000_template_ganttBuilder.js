@@ -6,8 +6,8 @@ function buildFmMenu(ui) {
 
 // --- 時間軸設定機能 ---
 function setTimescale() {
-  validateNamedRange(RANGE_NAMES.TIMESCALE_START_CELL);
-  const startCell = SpreadsheetApp.getActiveSpreadsheet().getRangeByName(RANGE_NAMES.TIMESCALE_START_CELL);
+  validateNamedRange(RANGE_NAMES.TIME_SCALE);
+  const timescaleRange = SpreadsheetApp.getActiveSpreadsheet().getRangeByName(RANGE_NAMES.TIME_SCALE);
 
   const fieldConfigs = [
     { id: "startTime", label: "開始時刻", type: "time", required: true },
@@ -21,23 +21,24 @@ function setTimescale() {
     message: "シフトの開始時刻、終了時刻、時間間隔を入力",
     onSubmitFuncName: "processTimescaleInput",
     onCancelFuncName: "handleDialogCancel",
-    context: { startCellA1: startCell.getA1Notation() },
+    context: { timescaleA1: timescaleRange.getA1Notation() },
   });
 }
 
 // 時間軸設定ダイアログの送信処理 (グローバル関数)
 function processTimescaleInput(formData, context) {
   try {
-    const startCell = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet().getRange(context.startCellA1);
+    const timescaleRange = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet().getRange(context.timescaleA1);
     const startTime = formData.startTime;
     const endTime = formData.endTime;
     const interval = formData.interval;
     const timescale = buildTimescaleArray(startTime, endTime, interval);
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    const range = sheet.getRange(startCell.getRow(), startCell.getColumn(), 1, timescale.length);
+    const range = sheet.getRange(timescaleRange.getRow(), timescaleRange.getColumn(), 1, timescale.length);
     range.setValues([timescale]);
   } catch (error) {
     console.error("時間軸設定エラー:", error);
+    console.error("エラー詳細:", error.stack);
     SpreadsheetApp.getUi().alert("エラーが発生しました: " + error.message);
   }
 }
@@ -108,7 +109,7 @@ function buildTimescaleArray(startTime, endTime, interval) {
   let currentTime = start;
 
   // 時刻を配列に追加
-  while (currentTime <= end) {
+  while (currentTime < end) {
     const timeString = Utilities.formatDate(currentTime, "UTC", "HH:mm"); // UTCを指定してフォーマット
     timeValues.push([timeString]); // 2次元配列にするために配列で囲む
 

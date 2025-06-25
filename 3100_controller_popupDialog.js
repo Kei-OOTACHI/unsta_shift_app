@@ -1,4 +1,4 @@
-// 範囲選択プロンプト(非推奨。名前付き範囲の使用を推奨。現在この関数を使用している機能はない。)
+// 範囲選択プロンプト(非推奨。名前付き範囲の使用を推奨。)
 function promptRangeSelection(message) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   const ui = SpreadsheetApp.getUi();

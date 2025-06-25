@@ -22,6 +22,19 @@ const REQUIRED_MEMBER_DATA_HEADERS = {
 };
 
 /**
+ * GANTT_TEMPLATEシートから値を保持する列の見出し
+ * 
+ * ここに指定された列は、メンバーデータの書き込み時に上書きされず、
+ * テンプレートシートの元の値が保持されます。
+ * 
+ * 将来的に他の列も追加可能:
+ * 例: "schedule", "deadline", "priority", "status" など
+ */
+const PRESERVE_TEMPLATE_COLUMNS = [
+  COL_HEADER_NAMES.DATE
+];
+
+/**
  * エラーの詳細情報をログに出力するヘルパー関数（共通ライブラリ用）
  * @param {Error} error - エラーオブジェクト
  * @param {string} context - エラーが発生したコンテキスト
@@ -302,6 +315,59 @@ function filterSheets(sheets, excludeNames) {
 }
 
 /**
+ * メンバーデータの必須項目を検証し、エラーメッセージを設定する
+ * @param {Array} memberData - メンバー情報の2次元配列
+ * @returns {Array} エラーメッセージが追加された2次元配列
+ */
+function validateMemberData(memberData) {
+  const headers = memberData[0];
+  const deptIndex = headers.indexOf(COL_HEADER_NAMES.DEPT);
+  const memberIdIndex = headers.indexOf(COL_HEADER_NAMES.MEMBER_ID);
+  
+  if (deptIndex === -1 || memberIdIndex === -1) {
+    console.log(`警告: 必要な列が見つかりません - dept: ${deptIndex}, memberId: ${memberIdIndex}`);
+    return memberData;
+  }
+  
+  return memberData.map((row, index) => {
+    // ヘッダー行はそのまま返す
+    if (index === 0) return row;
+    
+    // 行の長さを調整
+    while (row.length <= Math.max(deptIndex, memberIdIndex)) {
+      row.push("");
+    }
+    
+    const dept = row[deptIndex];
+    const currentMemberId = row[memberIdIndex];
+    
+    // 既にエラーメッセージが設定されている場合はスキップ
+    if (currentMemberId && currentMemberId.includes("エラー：")) {
+      return row;
+    }
+    
+    // dept列が空または無効な場合、エラーメッセージを設定
+    if (!dept || (typeof dept === 'string' && dept.trim() === '')) {
+      // 有効なmemberIdが既に存在する場合は上書きしない（emailが有効だった場合）
+      if (!currentMemberId || currentMemberId.trim() === '') {
+        const errorMessage = "エラー：deptが記入されていないため、ガントチャートに追加できませんでした";
+        row[memberIdIndex] = errorMessage;
+        
+        console.log(`行${index + 1}: deptが空のためエラーメッセージを設定 - 「${errorMessage}」`);
+      } else {
+        // 既にmemberIdがある場合は、deptエラーの情報を追加
+        const errorMessage = "エラー：deptが記入されていないため、ガントチャートに追加できませんでした";
+        row[memberIdIndex] = errorMessage;
+        
+        console.log(`行${index + 1}: deptが空のため既存のmemberIdを上書き - 「${errorMessage}」`);
+      }
+    }
+    
+    return row;
+  });
+}
+
+/**
  * メンバーIDを生成してデータに追加する
  * @param {Array} memberData - メンバー情報の2次元配列
  * @returns {Array} メンバーIDが追加された2次元配列
@@ -322,11 +388,26 @@ function generateMemberIds(memberData) {
     // ヘッダー行はそのまま返す
     if (index === 0) return row;
     
+    // 行の長さを調整（新しい列が追加された場合）
+    while (row.length <= memberIdIndex) {
+      row.push("");
+    }
+    
     const email = row[emailIndex];
-    if (email && typeof email === 'string') {
+    if (email && typeof email === 'string' && email.trim() !== '') {
+      // 有効なemailがある場合、memberIdを生成
       const memberId = email.split('@')[0];
       row[memberIdIndex] = memberId;
+      
+      console.log(`行${index + 1}: email「${email}」からmemberId「${memberId}」を生成`);
+    } else {
+      // emailが空または無効な場合、エラーメッセージを設定
+      const errorMessage = "エラー：emailが記入されていないため、memberIdを生成できませんでした";
+      row[memberIdIndex] = errorMessage;
+      
+      console.log(`行${index + 1}: emailが空のためエラーメッセージを設定 - 「${errorMessage}」`);
     }
+    
     return row;
   });
 }
@@ -371,14 +452,21 @@ function createMemberDataMap(memberData) {
       .reduce((dataMap, row, index) => {
         try {
           const memberId = row[memberIdIndex];
-          if (memberId) {
+          
+          // memberIdが存在し、エラーメッセージでない場合のみマップに追加
+          if (memberId && !String(memberId).includes("エラー：")) {
             dataMap[memberId] = {};
             
             // 各ヘッダーに対応する値をマップに設定
             headers.forEach((header, j) => {
               dataMap[memberId][header] = row[j];
             });
+            
+            console.log(`メンバーデータマップに追加: ${memberId}`);
+          } else if (memberId && String(memberId).includes("エラー：")) {
+            console.log(`エラーメッセージを含むmemberIdをスキップ: ${memberId}`);
           }
+          
           return dataMap;
         } catch (rowError) {
           logLibraryError(rowError, `メンバーデータマップ作成 - 行${index + 2}の処理`, {
