@@ -11,7 +11,9 @@ const SHEET_NAMES = {
 };
 
 function buildShiftDataMergerMenu(ui) {
-  return ui.createMenu("4.シフトデータ登録").addItem("「4.登録予定_入力データ」のシフトデータをシフト表SSに反映", "main");
+  return ui
+    .createMenu("4.シフトデータ登録")
+    .addItem("「4.登録予定_入力データ」のシフトデータをシフト表SSに反映", "main");
 }
 
 function main() {
@@ -47,8 +49,10 @@ function integrateShiftData(
   SpreadsheetApp.getActive().toast("RDBデータの部署ごとのグループ化を開始します...", "処理状況");
   const rdbDataGrpedByDept = groupByDept(validRdbData, RDB_COL_INDEXES.dept);
 
-  // 処理対象の部署（Ganttに存在する部署のみ）
-  const validDepartments = new Set([...Object.keys(ganttDataGrpedByDept)]);
+  // 処理対象の部署（Ganttに存在し、かつRDBにも存在する部署のみ）
+  const ganttDepartments = new Set(Object.keys(ganttDataGrpedByDept));
+  const rdbDepartments = new Set(Object.keys(rdbDataGrpedByDept));
+  const validDepartments = new Set([...ganttDepartments].filter((dept) => rdbDepartments.has(dept)));
 
   let newGanttValues = {};
   let newGanttBgs = {};
@@ -62,7 +66,7 @@ function integrateShiftData(
 
   // RDBのみに存在する部署をエラーデータとして収集
   Object.entries(rdbDataGrpedByDept).forEach(([deptKey, rdbData]) => {
-    if (!validDepartments.has(deptKey)) {
+    if (!ganttDepartments.has(deptKey)) {
       // Ganttに存在しない部署のRDBデータはエラーとして扱う
       errorData = errorData.concat(
         rdbData.map((row) =>
@@ -145,6 +149,9 @@ function integrateShiftData(
 
   // 処理完了の通知
   SpreadsheetApp.getActive().toast("シフトデータ統合処理が完了しました！", "完了");
+
+  // データ整合性チェック
+  // performDataIntegrityCheck(ganttDataGrpedByDept, validRdbData, newRdbData, conflictData, errorData, newGanttValues);
 }
 
 function validateAndSeparateRdbData(rdbData) {
@@ -255,17 +262,17 @@ function processDepartment(deptKey, rdbData, ganttData) {
     // エラーデータを統合（元のerrorShiftsとtransformerからのエラーデータ）
     const deptErrorData = [
       // 元のエラーシフトデータ（ガントチャートからのエラー）
-      ...errorShifts.map((shiftObj) => 
+      ...errorShifts.map((shiftObj) =>
         getColumnOrder(ERROR_COL_INDEXES).map((key) => {
           // startTimeとendTimeはh:mm形式の文字列に変換
-          if (key === 'startTime' || key === 'endTime') {
+          if (key === "startTime" || key === "endTime") {
             return formatTimeToHHMM(shiftObj[key]);
           }
           return shiftObj[key];
         })
       ),
       // convertObjsTo2dAryで検出されたエラーデータ（memberDateIdが見つからない）
-      ...transformerErrorData
+      ...transformerErrorData,
     ];
 
     // ヘッダー情報も含めて返す（新しいシート作成用）
@@ -333,10 +340,8 @@ function setDataToSheets(
     try {
       OutErrorRdbSheet.getDataRange().clearContent();
       // エラーデータの書き込み（Ganttに存在しない部署のRDBデータ）
-      if (errorData.length > 0) {
-        errorData.unshift(getColumnOrder(ERROR_COL_INDEXES));
-        OutErrorRdbSheet.getRange(1, 1, errorData.length, errorData[0].length).setValues(errorData);
-      }
+      errorData.unshift(getColumnOrder(ERROR_COL_INDEXES));
+      OutErrorRdbSheet.getRange(1, 1, errorData.length, errorData[0].length).setValues(errorData);
       console.log(`${SHEET_NAMES.ERROR_RDB}シートの更新が完了しました`);
       SpreadsheetApp.getActive().toast(`${SHEET_NAMES.ERROR_RDB}シートの更新が完了しました`, "更新完了");
     } catch (error) {
@@ -353,7 +358,12 @@ function setDataToSheets(
 
   for (const [sheetName, sheetData] of Object.entries(ganttData)) {
     try {
-      const { ganttShiftValues: shiftValues, ganttShiftBgs: shiftBgs, firstDataRowOffset, firstDataColOffset } = sheetData;
+      const {
+        ganttShiftValues: shiftValues,
+        ganttShiftBgs: shiftBgs,
+        firstDataRowOffset,
+        firstDataColOffset,
+      } = sheetData;
 
       // 空のガントデータの場合はスキップ
       if (!shiftValues || shiftValues.length === 0 || (shiftValues.length === 1 && shiftValues[0].length === 0)) {
@@ -386,9 +396,13 @@ function setDataToSheets(
         throw new Error(`対象範囲の結合解除・クリア処理でエラーが発生しました: ${e.message}`);
       }
       try {
+        // shiftRangeの条件付き書式をすべて取得
+        const conditionalFormats = targetSheet.getConditionalFormatRules();        
         // firstDataの位置からシフトデータを設定
         shiftRange.setValues(shiftValues);
         shiftRange.setBackgrounds(shiftBgs);
+        // 取得した条件付き書式を再設定
+        targetSheet.setConditionalFormatRules(conditionalFormats);
       } catch (error) {
         throw new Error(`シフトデータ設定中にエラーが発生しました: ${error.message}`);
       }
@@ -397,12 +411,16 @@ function setDataToSheets(
       try {
         mergeSameValuesHorizontally(targetSheet, shiftRange);
         // mergeSameValuesVertically(targetSheet, shiftRange);
+        
       } catch (e) {
         throw new Error(`セル結合処理でエラーが発生しました: ${e.message}`);
       }
 
       console.log(`ガントチャート「${ganttSsName}」のシート「${sheetName}」の更新が完了しました`);
-      SpreadsheetApp.getActive().toast(`ガントチャート「${ganttSsName}」のシート「${sheetName}」の更新が完了しました`, "更新完了");
+      SpreadsheetApp.getActive().toast(
+        `ガントチャート「${ganttSsName}」のシート「${sheetName}」の更新が完了しました`,
+        "更新完了"
+      );
     } catch (error) {
       showRestorePrompt(
         [`シート「${sheetName}」`],
@@ -457,9 +475,9 @@ function formatTimeToHHMM(dateValue) {
   if (!dateValue || !(dateValue instanceof Date) || isNaN(dateValue.getTime())) {
     return "";
   }
-  
-  const hours = dateValue.getHours().toString().padStart(2, '0');
-  const minutes = dateValue.getMinutes().toString().padStart(2, '0');
+
+  const hours = dateValue.getHours().toString().padStart(2, "0");
+  const minutes = dateValue.getMinutes().toString().padStart(2, "0");
   return `${hours}:${minutes}`;
 }
 
@@ -469,24 +487,182 @@ function parseTimeToDate(timeValue) {
     // 既にDateオブジェクトの場合はそのまま返す
     return timeValue;
   }
-  
-  if (typeof timeValue === 'string') {
+
+  if (typeof timeValue === "string") {
     // h:mmまたはhh:mm形式の文字列の場合
     const timeMatch = timeValue.match(/^(\d{1,2}):(\d{2})$/);
     if (timeMatch) {
       const hours = parseInt(timeMatch[1], 10);
       const minutes = parseInt(timeMatch[2], 10);
-      
+
       // 1970年1月1日00:00分のDateオブジェクトを生成
       const date = new Date(1970, 0, 1, hours, minutes, 0, 0);
       return date;
     }
   }
-  
+
   // その他の場合は通常のDateコンストラクタを試す
   const date = new Date(timeValue);
   if (isNaN(date.getTime())) {
     throw new Error(`無効な時刻形式です: ${timeValue}`);
   }
   return date;
+}
+
+// データ整合性チェック機能
+function performDataIntegrityCheck(
+  ganttDataGrpedByDept,
+  validRdbData,
+  newRdbData,
+  conflictData,
+  errorData,
+  newGanttValues
+) {
+  console.log("=== シフトデータ整合性チェック開始 ===");
+
+  // 入力データの個数カウント
+  const inputGanttShiftCount = countGanttShifts(ganttDataGrpedByDept);
+  const inputRdbShiftCount = validRdbData.length - 1; // ヘッダー行を除く
+
+  // 出力データの個数カウント
+  const outputGanttShiftCount = countOutputGanttShifts(newGanttValues);
+  const outputMergedRdbShiftCount = newRdbData.length;
+  const outputConflictShiftCount = conflictData.length;
+  const outputErrorShiftCount = errorData.length;
+
+  // 結果表示
+  const resultMessage = `
+■ シフトデータ個数チェック結果
+
+【入力データ】
+・InGanttSs のシフトデータ: ${inputGanttShiftCount}個
+・InRdbSheet のシフトデータ: ${inputRdbShiftCount}個
+・入力合計: ${inputGanttShiftCount + inputRdbShiftCount}個
+
+【出力データ】
+・OutGanttSs に書き込み: ${outputGanttShiftCount}個
+・OutMergedRdbSheet に書き込み: ${outputMergedRdbShiftCount}個
+・OutConflictRdbSheet に書き込み: ${outputConflictShiftCount}個
+・OutErrorRdbSheet に書き込み: ${outputErrorShiftCount}個
+・出力合計: ${outputMergedRdbShiftCount + outputConflictShiftCount + outputErrorShiftCount}個
+`;
+
+  console.log(resultMessage);
+
+  // 整合性チェック
+  let hasIntegrityError = false;
+  const errorMessages = [];
+
+  // チェック1: OutGanttSsとOutMergedRdbSheetの個数が一致するか
+  if (outputGanttShiftCount !== outputMergedRdbShiftCount) {
+    hasIntegrityError = true;
+    const error1 = `エラー1: OutGanttSs(${outputGanttShiftCount}個)とOutMergedRdbSheet(${outputMergedRdbShiftCount}個)の個数が一致しません`;
+    errorMessages.push(error1);
+    console.error(error1);
+  }
+
+  // チェック2: 入力合計と出力合計が一致するか
+  const inputTotal = inputGanttShiftCount + inputRdbShiftCount;
+  const outputTotal = outputMergedRdbShiftCount + outputConflictShiftCount + outputErrorShiftCount;
+  if (inputTotal !== outputTotal) {
+    hasIntegrityError = true;
+    const error2 = `エラー2: 入力合計(${inputTotal}個)と出力合計(${outputTotal}個)が一致しません`;
+    errorMessages.push(error2);
+    console.error(error2);
+  }
+
+  if (hasIntegrityError) {
+    console.error("=== データ整合性エラーが検出されました ===");
+    errorMessages.forEach((error) => console.error(error));
+
+    const alertMessage =
+      resultMessage +
+      `
+
+【整合性チェック結果】
+❌ エラーが検出されました：
+
+${errorMessages.join("\n")}
+
+データの整合性に問題があります。
+エンジニアに連絡して確認を依頼してください。`;
+
+    Browser.msgBox("データ整合性エラー", alertMessage, Browser.Buttons.OK);
+  } else {
+    console.log("✅ データ整合性チェック: すべて正常");
+
+    const successMessage =
+      resultMessage +
+      `
+
+【整合性チェック結果】
+✅ すべての整合性チェックが正常に完了しました`;
+
+    Browser.msgBox("データ整合性チェック完了", successMessage, Browser.Buttons.OK);
+  }
+
+  console.log("=== シフトデータ整合性チェック完了 ===");
+}
+
+// Ganttデータからシフト個数をカウント
+function countGanttShifts(ganttDataGrpedByDept) {
+  let totalShifts = 0;
+
+  Object.values(ganttDataGrpedByDept).forEach((sheetData) => {
+    const { values, backgrounds } = sheetData;
+
+    // firstDataの位置を取得（0ベースのインデックス）
+    // 注意: GANTT_ROW_INDEXES.firstDataとGANTT_COL_INDEXES.firstDataは
+    // 名前付き範囲から取得時に既に0ベース化済み（getRow()-1, getColumn()-1）
+    const firstDataRow = GANTT_ROW_INDEXES.firstData;
+    const firstDataCol = GANTT_COL_INDEXES.firstData;
+
+    // シフトデータ部分を取得
+    const shiftValues = values.slice(firstDataRow).map((row) => row.slice(firstDataCol));
+    const shiftBgs = backgrounds.slice(firstDataRow).map((row) => row.slice(firstDataCol));
+
+    // 値または背景色でシフトデータを判定してカウント
+    shiftValues.forEach((row, rowIndex) => {
+      row.forEach((cell, colIndex) => {
+        const bgColor = shiftBgs[rowIndex][colIndex];
+        const hasValue = cell !== "" && cell !== null && cell !== undefined;
+        const hasNonWhiteBg =
+          bgColor && bgColor.toLowerCase() !== "#ffffff" && bgColor.toLowerCase() !== "#fff" && bgColor !== "white";
+
+        // 値が入っているか、背景色が白以外の場合はシフトデータとしてカウント
+        if (hasValue || hasNonWhiteBg) {
+          totalShifts++;
+        }
+      });
+    });
+  });
+
+  return totalShifts;
+}
+
+// 出力Ganttデータからシフト個数をカウント
+function countOutputGanttShifts(newGanttValues) {
+  let totalShifts = 0;
+
+  Object.values(newGanttValues).forEach((sheetData) => {
+    const { ganttShiftValues, ganttShiftBgs } = sheetData;
+
+    if (ganttShiftValues && ganttShiftValues.length > 0) {
+      ganttShiftValues.forEach((row, rowIndex) => {
+        row.forEach((cell, colIndex) => {
+          const bgColor = ganttShiftBgs && ganttShiftBgs[rowIndex] ? ganttShiftBgs[rowIndex][colIndex] : "#ffffff";
+          const hasValue = cell !== "" && cell !== null && cell !== undefined;
+          const hasNonWhiteBg =
+            bgColor && bgColor.toLowerCase() !== "#ffffff" && bgColor.toLowerCase() !== "#fff" && bgColor !== "white";
+
+          // 値が入っているか、背景色が白以外の場合はシフトデータとしてカウント
+          if (hasValue || hasNonWhiteBg) {
+            totalShifts++;
+          }
+        });
+      });
+    }
+  });
+
+  return totalShifts;
 }
